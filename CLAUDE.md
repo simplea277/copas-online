@@ -58,6 +58,43 @@ route (détails plus bas).
   copas → ouros → espadas → paus, force croissante dans chaque enseigne. Le
   moteur ne trie rien ; c'est purement un tri d'affichage sur `hand.myHand`
   avant rendu.
+- **Fin de manche anticipée dès que les 10 copas ont toutes été jouées**
+  (`engine.js`, `resolveTrick()`) : plus besoin d'attendre que toutes les
+  mains soient vides si le score est déjà scellé. `result.earlyEnd` distingue
+  ce cas d'une fin normale, affiché à l'utilisateur dans l'overlay de fin de
+  manche (`game:handOver` → `earlyEnd`).
+- **Animations cosmétiques (distribution + pioche) pilotées par des petites
+  machines à états dans `client.js`** (`state.dealAnim`, `state.drawAnim`,
+  `state.justDrawnStage`), toutes suivant le même pattern : un id incrémental
+  (`dealAnimCounter`) permet à toute étape en cours de se rendre obsolète
+  proprement (vérifiée à chaque `setTimeout`) si un état plus récent arrive
+  entre-temps, sans jamais bloquer le jeu ni planter. Toutes respectent
+  `prefers-reduced-motion` en sautant directement à l'état final. Éléments
+  volants créés dynamiquement dans `#deal-anim-layer` (`pointer-events:none`),
+  positionnés via `getBoundingClientRect()` sur des ancres `data-anchor`
+  posées sur les éléments concernés (`.opponent`, `.score-chip` du donneur,
+  `.my-hand-wrap`, `.draw-pile`).
+  - Distribution initiale (début de manche) : cartes envoyées une par une en
+    tournant autour de la table (`computeDealSequence`), puis à 3 joueurs une
+    étape "pile" dépose la pioche restante au centre.
+  - Pioche visible à 3 joueurs (`.draw-pile`) : une seule carte dos face
+    cachée avec le nombre restant affiché dessus (pas un badge à part),
+    alignée en bas sur les cartes du pli en cours.
+  - Pioche en fin de pli (plis 1-3) : après l'affichage du pli résolu,
+    rejoue une mini-distribution depuis `.draw-pile` vers chaque joueur.
+    **Le contenu réel d'une carte piochée n'est envoyé qu'au joueur
+    concerné** (`server.js` émet `game:trickResolved` par socket, pas en
+    broadcast room-wide : `myDrawnCard` = contenu réel pour moi, `drawOrder`
+    = liste publique des ids sans contenu pour rejouer l'animation chez les
+    autres). Ma carte piochée s'affiche ~2,2s face visible au-dessus de ma
+    main (`.just-drawn-ghost`) avant de s'intégrer lentement (~1s) avec un
+    halo doré (`.pcard.just-drawn`) — timings réglés sur plusieurs allers-
+    retours avec l'utilisateur, à retoucher si retour "pas parfait" sans
+    précision (dernier état connu : fonctionnel mais peut-être encore à
+    affiner, voir avec l'utilisateur ce qui cloche exactement avant de
+    retoucher au hasard).
+  - Badge donneur (`.dealer-badge`, jeton doré "D") sur l'opponent-chip ou le
+    score-chip de `hand.players[hand.dealerIndex]`, recalculé à chaque rendu.
 
 ## Bugs corrigés (et pourquoi, pour éviter de les réintroduire)
 
@@ -121,6 +158,13 @@ route (détails plus bas).
 - **Vérifier que l'auto-deploy Render est bien actif** avant de pousser en
   supposant que ça se redéploie tout seul (sinon : Manual Deploy dans le
   dashboard Render).
+- **Animation de mise en évidence de la carte piochée (fin de pli 1-3, voir
+  plus haut) : dernier retour utilisateur "pas parfait" sans plus de détail**,
+  juste avant qu'il n'aille se coucher (2026-07-04). Les timings ont déjà été
+  ajustés deux fois (durée d'affichage, vitesse d'intégration) suite à ses
+  retours précédents. À reprendre en lui demandant précisément ce qui ne va
+  pas (position ? vitesse ? lisibilité ? autre chose ?) plutôt que de
+  retoucher au hasard.
 
 ## Comment tester
 
@@ -170,4 +214,17 @@ Le déploiement se fait via GitHub → Render :
 Il n'existe pas de script/commande pour vérifier automatiquement qu'un
 déploiement Render a réussi depuis cet environnement — c'est à vérifier
 manuellement sur l'URL publique (`https://<nom-du-service>.onrender.com`)
-après le push.
+après le push, **sauf si l'utilisateur fournit une clé API Render** (donnée
+en clair dans le chat lors d'une session précédente, non stockée dans ce
+repo ni ailleurs pour des raisons de sécurité — si besoin, la redemander).
+Avec une clé, vérifier via l'API :
+
+```bash
+curl -s -H "Authorization: Bearer $RENDER_API_KEY" \
+  "https://api.render.com/v1/services/srv-d93orn57vvec73deij20/deploys?limit=1"
+```
+
+Service id du web service `copas-online` : `srv-d93orn57vvec73deij20`.
+Attendre `deploy.status == "live"` avec `deploy.commit.id` correspondant au
+commit poussé (séquence typique : `build_in_progress` → `update_in_progress`
+→ `live`, ~15-30s).
