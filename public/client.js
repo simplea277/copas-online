@@ -5,8 +5,36 @@
 const socket = io();
 const app = document.getElementById('app');
 
-const SUIT_SYMBOL = { espadas: '♠', ouros: '♦', copas: '♥', paus: '♣' };
 const RANK_LABEL = { '2':'2','3':'3','4':'4','5':'5','6':'6', valete:'V', dama:'D', rei:'R', '7':'7', as:'A' };
+
+// Enseignes du jeu portugais (Sueca) : épées, coupes, deniers, bâtons.
+// SVG simples et génériques, dessinés pour cette interface (aucune
+// reproduction d'un jeu de cartes existant). "1em" + currentColor pour
+// qu'elles s'intègrent dans le flux de texte comme le faisaient les
+// symboles ♠♥♦♣ d'origine.
+const SUIT_SVG = {
+  espadas: `<svg class="suit-svg" viewBox="0 0 24 24" width="1em" height="1em" fill="currentColor" aria-hidden="true">
+    <polygon points="12,1 15.2,15 8.8,15" />
+    <rect x="7" y="15" width="10" height="2" rx="1" />
+    <rect x="10.4" y="17" width="3.2" height="4" />
+    <circle cx="12" cy="22" r="1.6" />
+  </svg>`,
+  copas: `<svg class="suit-svg" viewBox="0 0 24 24" width="1em" height="1em" fill="currentColor" aria-hidden="true">
+    <path d="M6 3h12v8c0 4.4-3.3 7-6 7s-6-2.6-6-7V3z" />
+    <rect x="11" y="18" width="2" height="3" />
+    <rect x="8" y="21" width="8" height="2" rx="1" />
+  </svg>`,
+  ouros: `<svg class="suit-svg" viewBox="0 0 24 24" width="1em" height="1em" fill="currentColor" aria-hidden="true">
+    <circle cx="12" cy="12" r="9" />
+    <circle cx="12" cy="12" r="5.4" fill="var(--ivory)" />
+    <circle cx="12" cy="12" r="2" />
+  </svg>`,
+  paus: `<svg class="suit-svg" viewBox="0 0 24 24" width="1em" height="1em" fill="currentColor" aria-hidden="true">
+    <rect x="9" y="2" width="6" height="20" rx="3" />
+    <circle cx="12" cy="7" r="1" fill="var(--ivory)" />
+    <circle cx="12" cy="13" r="1" fill="var(--ivory)" />
+  </svg>`,
+};
 
 const SESSION_KEY = 'copas:session';
 
@@ -45,7 +73,7 @@ function cardId(c) { return `${c.suit}-${c.rank}`; }
 
 function renderCard(card, extraClass = '') {
   if (!card) return `<div class="pcard placeholder"></div>`;
-  const sym = SUIT_SYMBOL[card.suit];
+  const sym = SUIT_SVG[card.suit];
   const label = RANK_LABEL[card.rank];
   return `<div class="pcard suit-${card.suit} ${extraClass}" data-card="${cardId(card)}">
     <div class="rank-top">${label}<br>${sym}</div>
@@ -235,7 +263,7 @@ function renderGame() {
     const slots = state.trickResult.trick.map((e) => renderCard(e.card)).join('');
     trickHtml = `<div class="trick-slots">${slots}</div>`;
     statusText = `${playerName(state.trickResult.winnerId)} remporte le pli` +
-      (state.trickResult.copasInTrick > 0 ? ` (+${state.trickResult.copasInTrick} ♥)` : '');
+      (state.trickResult.copasInTrick > 0 ? ` (+${state.trickResult.copasInTrick} ${SUIT_SVG.copas})` : '');
   } else {
     const slots = hand.currentTrick.map((e) => renderCard(e.card)).join('') +
       Array.from({ length: hand.numPlayers - hand.currentTrick.length }).map(() => renderCard(null)).join('');
@@ -302,7 +330,7 @@ function renderHandOverOverlay() {
     if (logEntry?.event === 'suspended_cleared') note = `→ ${logEntry.cleared} pts en suspens effacés !`;
     if (logEntry?.event === 'suspended_realized') note = `→ +${logEntry.totalAdded} pts réels`;
     if (logEntry?.event === 'normal_add' && copas > 0) note = `→ +${copas} pts`;
-    return `<div class="hand-summary-row"><span>${playerName(pid)} — ${copas} ♥</span><span>${note}</span></div>`;
+    return `<div class="hand-summary-row"><span>${playerName(pid)} — ${copas} ${SUIT_SVG.copas}</span><span>${note}</span></div>`;
   }).join('');
 
   const isGameOver = !!info.gameOver;

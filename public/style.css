@@ -10,6 +10,12 @@
   --ink: #1a2420;
   --shadow: rgba(0,0,0,0.45);
 
+  /* Enseignes du jeu portugais (Sueca) */
+  --suit-espadas: var(--azulejo);
+  --suit-copas: var(--copas);
+  --suit-ouros: #8a6a1f;
+  --suit-paus: #6b4226;
+
   --font-display: 'Fraunces', Georgia, serif;
   --font-body: 'Inter', system-ui, sans-serif;
   --font-mono: 'IBM Plex Mono', monospace;
@@ -307,12 +313,17 @@ button.secondary {
   user-select: none;
   flex-shrink: 0;
 }
-.pcard.suit-copas, .pcard.suit-ouros { color: var(--copas); }
-.pcard.suit-espadas, .pcard.suit-paus { color: var(--ink); }
+.pcard.suit-espadas { color: var(--suit-espadas); }
+.pcard.suit-copas { color: var(--suit-copas); }
+.pcard.suit-ouros { color: var(--suit-ouros); }
+.pcard.suit-paus { color: var(--suit-paus); }
 .pcard .rank-top { text-align: left; line-height: 1; }
 .pcard .suit-icon { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); font-size: 1.6rem; }
 .pcard .rank-bottom { text-align: right; transform: rotate(180deg); line-height: 1; }
 .pcard.placeholder { background: rgba(245,239,224,0.08); box-shadow: none; }
+
+/* Icônes SVG des enseignes (remplacent les symboles ♠♥♦♣) */
+.suit-svg { display: inline-block; vertical-align: -0.125em; }
 
 /* My hand */
 .my-hand-wrap {
