@@ -71,6 +71,7 @@ function leaveGame() {
   state.handOverInfo = null;
   state.trickResult = null;
   state.lastTrick = null;
+  state.lastTrickRevealed = false;
   state.error = null;
   state.myId = null;
   state.screen = 'home';
@@ -89,7 +90,8 @@ const state = {
   myId: null,           // playerId stable (indépendant du socket.id courant)
   error: null,
   trickResult: null,    // { trick, winnerId, copasInTrick } affiché temporairement
-  lastTrick: null,      // dernier pli résolu, affiché en petit tant que la manche continue
+  lastTrick: null,      // dernier pli résolu, consultable via le widget carte face cachée
+  lastTrickRevealed: false, // le widget est-il actuellement retourné (cartes visibles) ?
   handOverInfo: null,   // payload de game:handOver, tant que l'overlay est affiché
   joining: false,
 };
@@ -259,6 +261,25 @@ function renderLobby() {
   }
 }
 
+// Widget fixe sur le côté droit de l'écran : une carte face cachée qu'on
+// retourne d'un clic pour voir le dernier pli résolu, et qu'on recache d'un
+// second clic.
+function renderLastTrickWidget() {
+  if (!state.lastTrick) return '';
+
+  if (!state.lastTrickRevealed) {
+    return `<div class="last-trick-widget" id="last-trick-widget" title="Voir le dernier pli">
+      <div class="pcard mini card-back"></div>
+    </div>`;
+  }
+
+  const t = state.lastTrick;
+  return `<div class="last-trick-widget revealed" id="last-trick-widget" title="Cacher le dernier pli">
+    <div class="last-trick-label">Dernier pli — ${playerName(t.winnerId)}${t.copasInTrick > 0 ? ` (+${t.copasInTrick} ${SUIT_SVG.copas})` : ''}</div>
+    <div class="last-trick-cards">${t.trick.map((e) => renderCard(e.card, 'mini')).join('')}</div>
+  </div>`;
+}
+
 function renderGame() {
   const hand = state.hand;
   const room = state.room;
@@ -306,12 +327,6 @@ function renderGame() {
     ? `<div class="special-banner">Phase de pioche (plis 1-3) — <strong>pas d'obligation de suivre la couleur</strong>, <strong>copas interdites</strong>${hand.drawPileCount > 0 ? ` · ${hand.drawPileCount} cartes en pioche` : ''}</div>`
     : '';
 
-  const lastTrickHtml = state.lastTrick ? `
-    <div class="last-trick">
-      <div class="last-trick-label">Dernier pli — ${playerName(state.lastTrick.winnerId)}${state.lastTrick.copasInTrick > 0 ? ` (+${state.lastTrick.copasInTrick} ${SUIT_SVG.copas})` : ''}</div>
-      <div class="last-trick-cards">${state.lastTrick.trick.map((e) => renderCard(e.card, 'mini')).join('')}</div>
-    </div>` : '';
-
   const scoreChips = hand.players.map((pid) => {
     const s = room.scores?.[pid] || { real: 0, suspended: 0 };
     return `<div class="score-chip ${pid === myId ? 'me' : ''}">
@@ -329,10 +344,10 @@ function renderGame() {
 
   app.innerHTML = `
     <button class="leave-btn" id="btn-leave">Quitter la partie</button>
+    ${renderLastTrickWidget()}
     <div class="screen table-wrap">
       <div class="score-bar">${scoreChips}</div>
       <div class="opponents-row">${opponentsHtml}</div>
-      ${lastTrickHtml}
       <div class="center-area">
         ${specialBanner}
         ${trickHtml}
@@ -348,6 +363,13 @@ function renderGame() {
   document.getElementById('btn-leave').onclick = () => {
     if (confirm('Quitter la partie ? Tu ne pourras pas revenir dans cette manche.')) leaveGame();
   };
+
+  if (state.lastTrick) {
+    document.getElementById('last-trick-widget').onclick = () => {
+      state.lastTrickRevealed = !state.lastTrickRevealed;
+      render();
+    };
+  }
 
   if (myTurn) {
     document.querySelectorAll('.my-hand .pcard.playable').forEach((el) => {
@@ -452,7 +474,8 @@ socket.on('hand:update', (hand) => {
 socket.on('game:trickResolved', (payload) => {
   if (state.screen === 'home') return;
   state.trickResult = payload;
-  state.lastTrick = payload; // reste affiché en petit une fois l'animation terminée
+  state.lastTrick = payload; // consultable via le widget une fois l'animation terminée
+  state.lastTrickRevealed = false; // nouveau pli = widget refermé, à retourner à nouveau pour le voir
   render();
   setTimeout(() => {
     state.trickResult = null;
@@ -464,6 +487,7 @@ socket.on('game:handOver', (payload) => {
   if (state.screen === 'home') return;
   state.handOverInfo = payload;
   state.lastTrick = null; // la manche suivante repart sans "dernier pli" de la précédente
+  state.lastTrickRevealed = false;
   render();
 });
 

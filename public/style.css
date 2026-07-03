@@ -295,19 +295,34 @@ button.secondary {
 }
 .special-banner strong { color: var(--gold); }
 
-/* Dernier pli résolu — reste affiché en petit tant que la manche continue */
-.last-trick {
+/* Dernier pli résolu — widget discret sur le bord droit de l'écran, replié
+   en une carte face cachée qu'on retourne d'un clic pour le consulter. */
+.last-trick-widget {
+  position: fixed;
+  top: 50%;
+  right: 6px;
+  transform: translateY(-50%);
+  z-index: 45; /* sous l'overlay de fin de manche/partie (50), au-dessus du reste */
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 4px;
-  opacity: 0.85;
+  cursor: pointer;
+}
+.last-trick-widget.revealed {
+  background: rgba(10,20,15,0.55);
+  border: 1px solid rgba(245,239,224,0.2);
+  border-radius: 12px;
+  padding: 8px 6px;
+  backdrop-filter: blur(4px);
 }
 .last-trick-label {
-  font-size: 0.68rem;
+  font-size: 0.62rem;
+  text-align: center;
   text-transform: uppercase;
   letter-spacing: 0.05em;
   color: var(--ivory-dim);
+  max-width: 96px;
 }
 .last-trick-cards { display: flex; gap: 3px; }
 .pcard.mini {
@@ -318,6 +333,18 @@ button.secondary {
   box-shadow: 0 2px 4px var(--shadow);
 }
 .pcard.mini .suit-icon { font-size: 0.85rem; }
+.pcard.card-back {
+  background: linear-gradient(155deg, var(--azulejo), var(--azulejo-light));
+  box-shadow: 0 2px 6px var(--shadow), inset 0 0 0 2px rgba(245,239,224,0.25);
+  position: relative;
+}
+.pcard.card-back::after {
+  content: '';
+  position: absolute;
+  inset: 5px;
+  border: 1px solid rgba(245,239,224,0.35);
+  border-radius: 4px;
+}
 
 /* Playing card */
 .pcard {
