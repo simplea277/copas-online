@@ -1,0 +1,20 @@
+{
+  "name": "copas-online",
+  "version": "1.0.0",
+  "description": "Copas Online — jeu de cartes portugais multijoueur (variante Sueca), 3 ou 4 joueurs",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "test": "node game/engine.test.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "socket.io": "^4.7.5"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "license": "ISC",
+  "keywords": [],
+  "author": ""
+}
