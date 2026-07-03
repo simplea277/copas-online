@@ -261,6 +261,12 @@ function renderGame() {
   const hand = state.hand;
   const room = state.room;
   if (!hand || !room) {
+    // La partie vient de se terminer (plus de main en cours) : on affiche
+    // quand même le résultat final au lieu de rester bloqué sur "Chargement".
+    if (state.handOverInfo) {
+      app.innerHTML = renderHandOverOverlay();
+      return;
+    }
     app.innerHTML = `<div class="screen" style="justify-content:center;"><p class="lede">Chargement de la partie…</p></div>`;
     return;
   }
@@ -418,7 +424,10 @@ socket.on('room:update', (room) => {
   state.room = room;
   if (room.started) {
     if (state.screen !== 'game') state.screen = 'game';
-  } else {
+  } else if (!state.handOverInfo) {
+    // Ne bascule vers le lobby que si on n'est pas en train d'afficher le
+    // résultat final d'une partie qui vient de se terminer (room.started
+    // repasse à false à ce moment-là, mais l'overlay doit rester affiché).
     state.screen = 'lobby';
   }
   render();
@@ -427,7 +436,7 @@ socket.on('room:update', (room) => {
 socket.on('hand:update', (hand) => {
   if (state.screen === 'home') return;
   state.hand = hand;
-  state.screen = 'game';
+  if (hand) state.screen = 'game';
   render();
 });
 

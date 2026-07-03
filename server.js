@@ -76,6 +76,10 @@ function handViewForPlayer(room, playerId) {
 }
 
 function broadcastHandState(room) {
+  // Rien à diffuser une fois la partie terminée (currentHand vidé) : un
+  // hand:update à null écraserait côté client l'écran de résultat final
+  // qu'on vient d'envoyer via game:handOver.
+  if (!room.currentHand) return;
   for (const p of room.players) {
     if (!p.connected) continue;
     io.to(p.socketId).emit('hand:update', handViewForPlayer(room, p.playerId));
