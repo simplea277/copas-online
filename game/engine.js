@@ -7,6 +7,11 @@ const SUITS = ['espadas', 'ouros', 'copas', 'paus'];
 // Ordre de force croissant
 const RANKS = ['2', '3', '4', '5', '6', 'valete', 'dama', 'rei', '7', 'as'];
 
+// La couleur copas n'est jamais réduite (seul le 2 d'espadas saute à 3
+// joueurs) : il y a donc toujours 10 cartes de copas, quel que soit le
+// nombre de joueurs.
+const TOTAL_COPAS = RANKS.length;
+
 function createDeck(numPlayers) {
   const deck = [];
   for (const suit of SUITS) {
@@ -183,10 +188,25 @@ function resolveTrick(hand) {
   // se fier à un nombre de plis fixe : à 3 joueurs, la pioche de 9 cartes
   // pendant les 3 premiers plis rallonge la manche à 13 plis (39 cartes ÷ 3),
   // pas 10 — sinon des cartes (et des copas) restent injouées.
-  const handOver = hand.players.every((p) => hand.hands[p].length === 0);
+  const allHandsEmpty = hand.players.every((p) => hand.hands[p].length === 0);
+
+  // ... ou dès que les 10 copas ont toutes été jouées : les plis restants ne
+  // peuvent plus contenir de copas, donc le score final est déjà connu et il
+  // est inutile de faire jouer les cartes restantes.
+  const copasPlayedSoFar = Object.values(hand.tricksWonCopas).reduce((a, b) => a + b, 0);
+  const allCopasPlayed = copasPlayedSoFar >= TOTAL_COPAS;
+
+  const handOver = allHandsEmpty || allCopasPlayed;
   if (handOver) hand.finished = true;
 
-  return { trick: finishedTrick, winnerId, copasInTrick, drawnCards, handOver };
+  return {
+    trick: finishedTrick,
+    winnerId,
+    copasInTrick,
+    drawnCards,
+    handOver,
+    earlyEnd: allCopasPlayed && !allHandsEmpty,
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -252,6 +272,7 @@ function checkGameOver(scores, threshold = 30) {
 module.exports = {
   SUITS,
   RANKS,
+  TOTAL_COPAS,
   createDeck,
   shuffle,
   cardId,

@@ -181,6 +181,58 @@ test('Simulation complète d\'une manche à 4 joueurs : toutes les mains vidées
   assert.strictEqual(totalCopas, 10);
 });
 
+test('Fin de manche anticipée dès que les 10 copas sont sorties, même mains non vides', () => {
+  const players = ['A', 'B', 'C', 'D'];
+  const hand = engine.dealNewHand(players, 0);
+
+  // On simule que 9 copas ont déjà été ramassées lors de plis précédents.
+  hand.tricksWonCopas = { A: 5, B: 2, C: 1, D: 1 };
+  hand.tricksPlayed = 9;
+
+  // Dernier pli : la 10e et dernière copas sort, et chaque joueur garde
+  // volontairement des cartes non jouées (paus) en main.
+  hand.hands.A = [{ suit: 'copas', rank: '2', strength: 0 }, { suit: 'paus', rank: 'as', strength: 9 }];
+  hand.hands.B = [{ suit: 'paus', rank: '2', strength: 0 }, { suit: 'paus', rank: '3', strength: 1 }];
+  hand.hands.C = [{ suit: 'paus', rank: '4', strength: 2 }, { suit: 'paus', rank: '5', strength: 3 }];
+  hand.hands.D = [{ suit: 'paus', rank: '6', strength: 4 }, { suit: 'paus', rank: '7', strength: 8 }];
+  hand.turnIndex = 0;
+  hand.currentTrick = [];
+
+  engine.playCard(hand, 'A', hand.hands.A[0]); // la seule copas de ce pli
+  engine.playCard(hand, 'B', hand.hands.B[0]);
+  engine.playCard(hand, 'C', hand.hands.C[0]);
+  const res = engine.playCard(hand, 'D', hand.hands.D[0]);
+
+  const totalCopas = Object.values(hand.tricksWonCopas).reduce((a, b) => a + b, 0);
+  assert.strictEqual(totalCopas, 10);
+  assert.strictEqual(res.handOver, true, 'les 10 copas sont sorties, la manche doit se terminer');
+  assert.strictEqual(hand.finished, true);
+  assert.strictEqual(res.earlyEnd, true);
+  const someHandsNonEmpty = players.some((p) => hand.hands[p].length > 0);
+  assert.ok(someHandsNonEmpty, 'il doit rester des cartes non jouées en main');
+});
+
+test('Pas de fin anticipée tant qu\'il reste des copas non jouées', () => {
+  const players = ['A', 'B', 'C', 'D'];
+  const hand = engine.dealNewHand(players, 0);
+
+  hand.tricksWonCopas = { A: 5, B: 2, C: 1, D: 1 }; // 9 copas jouées
+  hand.hands.A = [{ suit: 'paus', rank: '2', strength: 0 }, { suit: 'paus', rank: 'as', strength: 9 }];
+  hand.hands.B = [{ suit: 'paus', rank: '3', strength: 1 }];
+  hand.hands.C = [{ suit: 'paus', rank: '4', strength: 2 }];
+  hand.hands.D = [{ suit: 'paus', rank: '6', strength: 4 }];
+  hand.turnIndex = 0;
+  hand.currentTrick = [];
+
+  engine.playCard(hand, 'A', hand.hands.A[0]);
+  engine.playCard(hand, 'B', hand.hands.B[0]);
+  engine.playCard(hand, 'C', hand.hands.C[0]);
+  const res = engine.playCard(hand, 'D', hand.hands.D[0]);
+
+  assert.strictEqual(res.handOver, false, 'il reste une copas non jouée, la manche continue');
+  assert.strictEqual(res.earlyEnd, false);
+});
+
 // ---------------------------------------------------------------------------
 test('Score : 0 copa ramassée ne change rien si pas de suspens', () => {
   const scores = engine.createInitialScores(['A', 'B']);

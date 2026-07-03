@@ -304,6 +304,7 @@ io.on('connection', (socket) => {
         scoringLog: log,
         scores: room.scores,
         gameOver: gameOverLosers,
+        earlyEnd: !!result.earlyEnd,
       });
 
       if (gameOverLosers) {
