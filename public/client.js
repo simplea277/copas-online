@@ -53,6 +53,22 @@ function clearSession() {
   try { localStorage.removeItem(SESSION_KEY); } catch (_) { /* rien à faire */ }
 }
 
+// Quitte définitivement la partie en cours : invalide la session côté
+// serveur (le token ne pourra plus servir à reprendre cette partie),
+// nettoie le stockage local, et ramène au choix créer/rejoindre.
+function leaveGame() {
+  socket.emit('room:leave', {});
+  clearSession();
+  state.room = null;
+  state.hand = null;
+  state.handOverInfo = null;
+  state.trickResult = null;
+  state.error = null;
+  state.myId = null;
+  state.screen = 'home';
+  render();
+}
+
 const savedSession = loadSession();
 
 const state = {
@@ -291,6 +307,7 @@ function renderGame() {
   }).join('');
 
   app.innerHTML = `
+    <button class="leave-btn" id="btn-leave">Quitter la partie</button>
     <div class="screen table-wrap">
       <div class="score-bar">${scoreChips}</div>
       <div class="opponents-row">${opponentsHtml}</div>
@@ -305,6 +322,10 @@ function renderGame() {
     </div>
     ${renderHandOverOverlay()}
   `;
+
+  document.getElementById('btn-leave').onclick = () => {
+    if (confirm('Quitter la partie ? Tu ne pourras pas revenir dans cette manche.')) leaveGame();
+  };
 
   if (myTurn) {
     document.querySelectorAll('.my-hand .pcard.playable').forEach((el) => {
@@ -380,7 +401,13 @@ socket.on('connect', () => {
   });
 });
 
+// Ces quatre évènements concernent un salon/une partie déjà rejoints. Si on
+// vient de quitter (state.screen === 'home'), on ignore tout évènement tardif
+// émis avant que le serveur ait traité notre "room:leave" — sinon un
+// room:update de l'ancien salon pourrait nous ramener dedans juste après
+// qu'on en soit sorti.
 socket.on('room:update', (room) => {
+  if (state.screen === 'home') return;
   state.room = room;
   if (room.started) {
     if (state.screen !== 'game') state.screen = 'game';
@@ -391,12 +418,14 @@ socket.on('room:update', (room) => {
 });
 
 socket.on('hand:update', (hand) => {
+  if (state.screen === 'home') return;
   state.hand = hand;
   state.screen = 'game';
   render();
 });
 
 socket.on('game:trickResolved', (payload) => {
+  if (state.screen === 'home') return;
   state.trickResult = payload;
   render();
   setTimeout(() => {
@@ -406,6 +435,7 @@ socket.on('game:trickResolved', (payload) => {
 });
 
 socket.on('game:handOver', (payload) => {
+  if (state.screen === 'home') return;
   state.handOverInfo = payload;
   render();
 });
@@ -415,8 +445,7 @@ document.addEventListener('click', (e) => {
     const wasGameOver = !!state.handOverInfo.gameOver;
     state.handOverInfo = null;
     if (wasGameOver) {
-      clearSession();
-      window.location.reload();
+      leaveGame();
     } else {
       render();
     }

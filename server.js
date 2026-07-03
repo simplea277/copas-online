@@ -224,6 +224,30 @@ io.on('connection', (socket) => {
     if (room.currentHand) broadcastHandState(room);
   }));
 
+  // Un joueur quitte volontairement le salon (bouton "Quitter la partie").
+  // On invalide sa place immédiatement : son sessionToken n'existe plus dans
+  // le salon, donc un futur "session:resume" avec ce token échouera proprement.
+  socket.on('room:leave', withErrorHandling('room:leave', (_, callback) => {
+    const room = rooms[socket.data.roomCode];
+    if (!room) return callback?.({ ok: true });
+
+    const idx = room.players.findIndex((p) => p.playerId === socket.data.playerId);
+    if (idx !== -1) room.players.splice(idx, 1);
+
+    socket.leave(room.code);
+    socket.data.roomCode = null;
+    socket.data.playerId = null;
+
+    if (room.players.length === 0) {
+      delete rooms[room.code];
+    } else {
+      broadcastRoomState(room);
+      if (room.currentHand) broadcastHandState(room);
+    }
+
+    callback?.({ ok: true });
+  }));
+
   socket.on('room:start', withErrorHandling('room:start', (_, callback) => {
     const room = rooms[socket.data.roomCode];
     if (!room) return callback?.({ ok: false, error: 'Salon introuvable.' });
