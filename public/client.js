@@ -70,6 +70,7 @@ function leaveGame() {
   state.hand = null;
   state.handOverInfo = null;
   state.trickResult = null;
+  state.lastTrick = null;
   state.error = null;
   state.myId = null;
   state.screen = 'home';
@@ -88,6 +89,7 @@ const state = {
   myId: null,           // playerId stable (indépendant du socket.id courant)
   error: null,
   trickResult: null,    // { trick, winnerId, copasInTrick } affiché temporairement
+  lastTrick: null,      // dernier pli résolu, affiché en petit tant que la manche continue
   handOverInfo: null,   // payload de game:handOver, tant que l'overlay est affiché
   joining: false,
 };
@@ -304,6 +306,12 @@ function renderGame() {
     ? `<div class="special-banner">Phase de pioche (plis 1-3) — <strong>pas d'obligation de suivre la couleur</strong>, <strong>copas interdites</strong>${hand.drawPileCount > 0 ? ` · ${hand.drawPileCount} cartes en pioche` : ''}</div>`
     : '';
 
+  const lastTrickHtml = state.lastTrick ? `
+    <div class="last-trick">
+      <div class="last-trick-label">Dernier pli — ${playerName(state.lastTrick.winnerId)}${state.lastTrick.copasInTrick > 0 ? ` (+${state.lastTrick.copasInTrick} ${SUIT_SVG.copas})` : ''}</div>
+      <div class="last-trick-cards">${state.lastTrick.trick.map((e) => renderCard(e.card, 'mini')).join('')}</div>
+    </div>` : '';
+
   const scoreChips = hand.players.map((pid) => {
     const s = room.scores?.[pid] || { real: 0, suspended: 0 };
     return `<div class="score-chip ${pid === myId ? 'me' : ''}">
@@ -324,6 +332,7 @@ function renderGame() {
     <div class="screen table-wrap">
       <div class="score-bar">${scoreChips}</div>
       <div class="opponents-row">${opponentsHtml}</div>
+      ${lastTrickHtml}
       <div class="center-area">
         ${specialBanner}
         ${trickHtml}
@@ -443,6 +452,7 @@ socket.on('hand:update', (hand) => {
 socket.on('game:trickResolved', (payload) => {
   if (state.screen === 'home') return;
   state.trickResult = payload;
+  state.lastTrick = payload; // reste affiché en petit une fois l'animation terminée
   render();
   setTimeout(() => {
     state.trickResult = null;
@@ -453,6 +463,7 @@ socket.on('game:trickResolved', (payload) => {
 socket.on('game:handOver', (payload) => {
   if (state.screen === 'home') return;
   state.handOverInfo = payload;
+  state.lastTrick = null; // la manche suivante repart sans "dernier pli" de la précédente
   render();
 });
 
