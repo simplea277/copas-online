@@ -135,7 +135,7 @@ function renderHome() {
   app.innerHTML = `
     <div class="screen" style="justify-content:center;">
       <h1>Copas <span class="accent">Online</span></h1>
-      <p class="lede">Le jeu<br>ramasse le moins de copas possible.</p>
+      <p class="lede">Ramasse le moins de copas possible</p>
       ${errorBox()}
       <div class="card-panel">
         <button class="primary" id="btn-create">Créer une partie</button>
