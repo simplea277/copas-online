@@ -75,6 +75,11 @@ function leaveGame() {
   state.error = null;
   state.myId = null;
   state.screen = 'home';
+  state.dealAnim = null;
+  state.drawAnim = null;
+  state.justDrawnCard = null;
+  state.justDrawnCardId = null;
+  state.justDrawnStage = null;
   render();
 }
 
@@ -95,6 +100,10 @@ const state = {
   handOverInfo: null,   // payload de game:handOver, tant que l'overlay est affiché
   joining: false,
   dealAnim: null,       // { id, phase: 'cards'|'pile', phaseStarted, sequence } tant que l'animation de distribution joue
+  drawAnim: null,       // { id, order, phaseStarted, pileCountBeforeDraw } tant que l'animation de pioche (fin de pli 1-3) joue
+  justDrawnCard: null,  // carte que je viens de piocher (contenu réel, seulement chez moi)
+  justDrawnCardId: null, // cardId() de justDrawnCard, pour la retrouver/comparer
+  justDrawnStage: null, // 'ghost' (au-dessus de la main) -> 'settle' (dans la main, mise en évidence) -> null
 };
 
 let dealAnimCounter = 0;
@@ -245,6 +254,98 @@ function runPilePhase(animId) {
 function finishDealAnim(animId) {
   if (!state.dealAnim || state.dealAnim.id !== animId) return;
   state.dealAnim = null;
+  render();
+}
+
+// ---------------------------------------------------------------------------
+// Animation de pioche — à chaque fin de pli des 3 premiers plis (3 joueurs),
+// rejoue une petite version de l'envol de la distribution : les cartes
+// piochées s'envolent de la pioche vers chaque joueur. Si j'ai pioché, ma
+// carte apparaît en plus brièvement face visible au-dessus de ma main avant
+// de s'y intégrer.
+// ---------------------------------------------------------------------------
+
+// payload : { drawOrder: [playerId, ...] | null, myDrawnCard: card | null }
+function startDrawAnim(payload) {
+  if (!payload || !payload.drawOrder || payload.drawOrder.length === 0) return;
+  if (prefersReducedMotion()) return; // l'état à jour (déjà en main) suffit, pas d'animation
+
+  dealAnimCounter += 1;
+  const animId = dealAnimCounter;
+  const hand = state.hand;
+  const pileCountBeforeDraw = (hand?.drawPileCount ?? 0) + payload.drawOrder.length;
+  state.drawAnim = { id: animId, order: payload.drawOrder, phaseStarted: false, pileCountBeforeDraw };
+
+  if (payload.myDrawnCard) {
+    const drawnId = cardId(payload.myDrawnCard);
+    state.justDrawnCard = payload.myDrawnCard;
+    state.justDrawnCardId = drawnId;
+    state.justDrawnStage = 'ghost';
+
+    setTimeout(() => {
+      if (state.justDrawnCardId !== drawnId) return; // remplacée entre-temps par une pioche plus récente
+      state.justDrawnStage = 'settle';
+      render();
+      setTimeout(() => {
+        if (state.justDrawnCardId !== drawnId) return;
+        state.justDrawnStage = null;
+        state.justDrawnCardId = null;
+        state.justDrawnCard = null;
+        render();
+      }, 1100);
+    }, 2200); // laisse le temps de bien voir la carte avant qu'elle rejoigne la main
+  }
+
+  render();
+}
+
+function runDrawAnimPhase(animId) {
+  const drawAnim = state.drawAnim;
+  const layer = document.getElementById('deal-anim-layer');
+  const pileEl = document.querySelector('[data-anchor="draw-pile"]');
+  if (!drawAnim || drawAnim.id !== animId || !layer || !pileEl) { finishDrawAnim(animId); return; }
+
+  const pileRect = pileEl.getBoundingClientRect();
+  const startX = pileRect.left + pileRect.width / 2 - 13;
+  const startY = pileRect.top + pileRect.height / 2 - 18;
+
+  const STAGGER = 180;
+  const FLIGHT = 320;
+
+  drawAnim.order.forEach((pid, i) => {
+    setTimeout(() => {
+      if (!state.drawAnim || state.drawAnim.id !== animId) return;
+      const targetEl = document.querySelector(`[data-anchor="player-${pid}"]`);
+      const currentLayer = document.getElementById('deal-anim-layer');
+      if (!targetEl || !currentLayer) return;
+
+      const targetRect = targetEl.getBoundingClientRect();
+      const dx = (targetRect.left + targetRect.width / 2 - 13) - startX;
+      const dy = (targetRect.top + targetRect.height / 2 - 18) - startY;
+
+      const card = document.createElement('div');
+      card.className = 'deal-card';
+      card.style.left = `${startX}px`;
+      card.style.top = `${startY}px`;
+      currentLayer.appendChild(card);
+      card.getBoundingClientRect();
+      card.style.transform = `translate(${dx}px, ${dy}px) rotate(${i % 2 === 0 ? -6 : 6}deg)`;
+      card.style.opacity = '0';
+
+      setTimeout(() => card.remove(), FLIGHT + 60);
+    }, i * STAGGER);
+  });
+
+  const total = drawAnim.order.length * STAGGER + FLIGHT + 150;
+  setTimeout(() => {
+    if (!state.drawAnim || state.drawAnim.id !== animId) return;
+    finishDrawAnim(animId);
+  }, total);
+}
+
+function finishDrawAnim(animId) {
+  if (!state.drawAnim || state.drawAnim.id !== animId) return;
+  state.drawAnim = null;
   render();
 }
 
@@ -483,13 +584,16 @@ function renderGame() {
   // centre, avec le nombre de cartes restantes. Caché tant que la phase
   // "cards" de la distribution tourne encore (elle n'apparaît qu'une fois
   // que le donneur a fini de se servir), et disparaît proprement une fois
-  // épuisée (drawPileCount === 0).
+  // épuisée (drawPileCount === 0). Pendant l'animation de pioche d'un pli,
+  // affiche encore le compte d'avant le tirage (les cartes "quittent" la
+  // pioche visuellement avant que son compte ne baisse).
   const cardsPhaseActive = !!(state.dealAnim && state.dealAnim.phase === 'cards');
-  const showDrawPile = hand.numPlayers === 3 && hand.drawPileCount > 0 && !cardsPhaseActive;
+  const displayedPileCount = state.drawAnim ? state.drawAnim.pileCountBeforeDraw : hand.drawPileCount;
+  const showDrawPile = hand.numPlayers === 3 && displayedPileCount > 0 && !cardsPhaseActive;
   const drawPileHtml = showDrawPile
     ? `<div class="draw-pile" data-anchor="draw-pile" title="Pioche">
         <div class="pcard card-back draw-pile-card"></div>
-        <div class="draw-pile-count">${hand.drawPileCount}</div>
+        <div class="draw-pile-count">${displayedPileCount}</div>
       </div>`
     : '';
   const centerRowHtml = drawPileHtml ? `<div class="trick-row">${trickHtml}${drawPileHtml}</div>` : trickHtml;
@@ -514,11 +618,27 @@ function renderGame() {
   // "pile" qui suit à 3 joueurs), ma main est révélée et jouable normalement.
   const dealingInProgress = cardsPhaseActive;
   const playableIds = new Set((hand.playableCards || []).map(cardId));
+
+  // Carte tout juste piochée (fin de pli 1-3) : le temps du stade "ghost",
+  // elle est retirée de la liste normale et affichée à part, face visible,
+  // au-dessus de la main ; au stade "settle", elle réapparaît dans la liste
+  // triée avec une brève mise en évidence.
+  const ghostActive = state.justDrawnStage === 'ghost' && state.justDrawnCardId;
+  const visibleMyHand = ghostActive
+    ? hand.myHand.filter((c) => cardId(c) !== state.justDrawnCardId)
+    : hand.myHand;
+  const justDrawnGhostHtml = ghostActive
+    ? `<div class="just-drawn-ghost">${renderCard(state.justDrawnCard, 'just-drawn-card')}</div>`
+    : '';
+
   const myHandHtml = dealingInProgress
     ? Array.from({ length: hand.myHand.length }).map(() => `<div class="pcard card-back"></div>`).join('')
-    : sortHand(hand.myHand).map((c) => {
+    : sortHand(visibleMyHand).map((c) => {
         const isPlayable = myTurn && playableIds.has(cardId(c));
-        return renderCard(c, isPlayable ? 'playable' : (myTurn ? 'unplayable' : ''));
+        const isJustDrawn = state.justDrawnStage === 'settle' && cardId(c) === state.justDrawnCardId;
+        const cls = [isPlayable ? 'playable' : (myTurn ? 'unplayable' : ''), isJustDrawn ? 'just-drawn' : '']
+          .filter(Boolean).join(' ');
+        return renderCard(c, cls);
       }).join('');
 
   app.innerHTML = `
@@ -534,6 +654,7 @@ function renderGame() {
         <div class="status-line ${myTurn ? 'my-turn' : ''}">${statusText}</div>
       </div>
       <div class="my-hand-wrap" data-anchor="player-${myId}">
+        ${justDrawnGhostHtml}
         <div class="my-hand ${dealingInProgress ? 'my-hand-pending' : ''}">${myHandHtml}</div>
       </div>
     </div>
@@ -567,6 +688,12 @@ function renderGame() {
     const animId = state.dealAnim.id;
     const phase = state.dealAnim.phase;
     requestAnimationFrame(() => runDealPhase(animId, phase));
+  }
+
+  if (state.drawAnim && !state.drawAnim.phaseStarted) {
+    state.drawAnim.phaseStarted = true;
+    const animId = state.drawAnim.id;
+    requestAnimationFrame(() => runDrawAnimPhase(animId));
   }
 }
 
@@ -678,6 +805,15 @@ socket.on('hand:update', (hand) => {
     state.dealAnim = null; // pas d'animation : la main s'affiche tout de suite
   }
 
+  if (isFreshDeal && !wasSamePendingDeal) {
+    // Nouvelle manche : toute animation/mise en évidence de pioche de la
+    // manche précédente n'a plus lieu d'être.
+    state.drawAnim = null;
+    state.justDrawnCard = null;
+    state.justDrawnCardId = null;
+    state.justDrawnStage = null;
+  }
+
   render();
 });
 
@@ -689,6 +825,9 @@ socket.on('game:trickResolved', (payload) => {
   render();
   setTimeout(() => {
     state.trickResult = null;
+    // Fin des 3 premiers plis (3 joueurs) : si des cartes ont été piochées,
+    // rejoue une petite distribution depuis la pioche vers chaque joueur.
+    startDrawAnim(payload);
     render();
   }, 1400);
 });
@@ -698,6 +837,10 @@ socket.on('game:handOver', (payload) => {
   state.handOverInfo = payload;
   state.lastTrick = null; // la manche suivante repart sans "dernier pli" de la précédente
   state.lastTrickRevealed = false;
+  state.drawAnim = null;
+  state.justDrawnCard = null;
+  state.justDrawnCardId = null;
+  state.justDrawnStage = null;
   render();
 });
 

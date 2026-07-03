@@ -284,11 +284,21 @@ io.on('connection', (socket) => {
     callback?.({ ok: true });
 
     if (result.trickComplete) {
-      io.to(room.code).emit('game:trickResolved', {
-        trick: result.trick,
-        winnerId: result.winnerId,
-        copasInTrick: result.copasInTrick,
-      });
+      // Émis par joueur (pas de broadcast room-wide) : le contenu réel d'une
+      // carte piochée ne doit être visible que par celui qui l'a piochée.
+      // Les autres joueurs reçoivent seulement l'ordre des tirages (qui a
+      // pioché, dans quel ordre) pour rejouer l'animation, sans le contenu.
+      const drawOrder = result.drawnCards ? Object.keys(result.drawnCards) : null;
+      for (const p of room.players) {
+        if (!p.connected) continue;
+        io.to(p.socketId).emit('game:trickResolved', {
+          trick: result.trick,
+          winnerId: result.winnerId,
+          copasInTrick: result.copasInTrick,
+          drawOrder,
+          myDrawnCard: result.drawnCards ? (result.drawnCards[p.playerId] || null) : null,
+        });
+      }
     }
 
     if (result.handOver) {

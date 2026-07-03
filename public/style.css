@@ -443,6 +443,7 @@ button.secondary {
 
 /* My hand */
 .my-hand-wrap {
+  position: relative; /* ancre pour la carte "just-drawn-ghost" au-dessus */
   display: flex;
   flex-direction: column;
   gap: 10px;
@@ -464,6 +465,38 @@ button.secondary {
 .my-hand .pcard.playable:active { transform: translateY(-10px); }
 .my-hand .pcard.playable { box-shadow: 0 3px 8px var(--shadow), 0 0 0 2px var(--gold); }
 .my-hand .pcard.unplayable { opacity: 0.4; filter: grayscale(0.6); }
+
+/* Carte tout juste piochée (fin de pli 1-3, 3 joueurs) — apparaît d'abord
+   face visible au-dessus de la main ("ghost"), le temps de bien la voir,
+   puis, une fois intégrée à la liste triée, un halo doré la met en
+   évidence en douceur ("settle"). animation-fill-mode: forwards pour que
+   la carte reste bien centrée/visible pendant tout le temps où elle est
+   affichée (pas seulement pendant les 0.5s de l'entrée). */
+.just-drawn-ghost {
+  position: absolute;
+  left: 50%;
+  bottom: 100%;
+  margin-bottom: 8px;
+  z-index: 4;
+  pointer-events: none;
+  animation: ghostPop 0.5s ease-out forwards;
+}
+@keyframes ghostPop {
+  0% { transform: translate(-50%, 26px) scale(0.75); opacity: 0; }
+  40% { transform: translate(-50%, -8px) scale(1.12); opacity: 1; }
+  100% { transform: translate(-50%, 0) scale(1); opacity: 1; }
+}
+.my-hand .pcard.just-drawn {
+  animation: justDrawnSettle 1s cubic-bezier(.22,.8,.3,1);
+}
+@keyframes justDrawnSettle {
+  0% { transform: translateY(-18px) scale(1.12); box-shadow: 0 0 0 3px var(--gold), 0 8px 16px var(--shadow); }
+  70% { transform: translateY(2px) scale(1.03); box-shadow: 0 0 0 3px var(--gold), 0 8px 16px var(--shadow); }
+  100% { transform: translateY(0) scale(1); box-shadow: 0 3px 8px var(--shadow); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .just-drawn-ghost, .my-hand .pcard.just-drawn { animation: none; }
+}
 
 /* Score bar */
 .score-bar {
