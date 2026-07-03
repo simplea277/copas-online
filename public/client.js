@@ -8,13 +8,33 @@ const app = document.getElementById('app');
 const SUIT_SYMBOL = { espadas: '♠', ouros: '♦', copas: '♥', paus: '♣' };
 const RANK_LABEL = { '2':'2','3':'3','4':'4','5':'5','6':'6', valete:'V', dama:'D', rei:'R', '7':'7', as:'A' };
 
+const SESSION_KEY = 'copas:session';
+
+function loadSession() {
+  try {
+    const raw = localStorage.getItem(SESSION_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch (_) {
+    return null;
+  }
+}
+function saveSession(session) {
+  try { localStorage.setItem(SESSION_KEY, JSON.stringify(session)); } catch (_) { /* stockage indisponible, tant pis */ }
+}
+function clearSession() {
+  try { localStorage.removeItem(SESSION_KEY); } catch (_) { /* rien à faire */ }
+}
+
+const savedSession = loadSession();
+
 const state = {
-  screen: 'home',       // home | create | join | lobby | game
+  // home | create | join | lobby | game | reconnecting
+  screen: savedSession ? 'reconnecting' : 'home',
   name: '',
   maxPlayersChoice: 4,
   room: null,           // dernier room:update reçu
   hand: null,           // dernier hand:update reçu
-  myId: null,
+  myId: null,           // playerId stable (indépendant du socket.id courant)
   error: null,
   trickResult: null,    // { trick, winnerId, copasInTrick } affiché temporairement
   handOverInfo: null,   // payload de game:handOver, tant que l'overlay est affiché
@@ -41,11 +61,19 @@ function playerName(id) {
 }
 
 function render() {
+  if (state.screen === 'reconnecting') return renderReconnecting();
   if (state.screen === 'home') return renderHome();
   if (state.screen === 'create') return renderCreate();
   if (state.screen === 'join') return renderJoin();
   if (state.screen === 'lobby') return renderLobby();
   if (state.screen === 'game') return renderGame();
+}
+
+function renderReconnecting() {
+  app.innerHTML = `
+    <div class="screen" style="justify-content:center;">
+      <p class="lede">Reconnexion à la partie…</p>
+    </div>`;
 }
 
 function errorBox() {
@@ -95,7 +123,9 @@ function renderCreate() {
     state.error = null;
     socket.emit('room:create', { name: state.name, maxPlayers: state.maxPlayersChoice }, (res) => {
       if (!res.ok) { state.error = res.error; render(); return; }
+      state.myId = res.playerId;
       state.room = res.room;
+      saveSession({ code: res.room.code, sessionToken: res.sessionToken });
       state.screen = 'lobby';
       render();
     });
@@ -125,7 +155,9 @@ function renderJoin() {
     state.error = null;
     socket.emit('room:join', { name: state.name, code }, (res) => {
       if (!res.ok) { state.error = res.error; render(); return; }
+      state.myId = res.playerId;
       state.room = res.room;
+      saveSession({ code: res.room.code, sessionToken: res.sessionToken });
       state.screen = 'lobby';
       render();
     });
@@ -293,7 +325,32 @@ function renderHandOverOverlay() {
 // Socket events
 // ---------------------------------------------------------------------------
 
-socket.on('connect', () => { state.myId = socket.id; });
+// Se déclenche à la connexion initiale ET à chaque reconnexion automatique
+// de socket.io (coupure réseau) — dans les deux cas le socket.id a changé,
+// donc il faut retrouver notre siège via le token de session persistant.
+socket.on('connect', () => {
+  const session = loadSession();
+  if (!session) {
+    if (state.screen === 'reconnecting') { state.screen = 'home'; render(); }
+    return;
+  }
+
+  socket.emit('session:resume', { code: session.code, sessionToken: session.sessionToken }, (res) => {
+    if (!res.ok) {
+      clearSession();
+      state.error = null;
+      state.screen = 'home';
+      render();
+      return;
+    }
+    state.myId = res.playerId;
+    state.room = res.room;
+    if (res.hand) state.hand = res.hand;
+    state.error = null;
+    state.screen = res.room.started ? 'game' : 'lobby';
+    render();
+  });
+});
 
 socket.on('room:update', (room) => {
   state.room = room;
@@ -330,6 +387,7 @@ document.addEventListener('click', (e) => {
     const wasGameOver = !!state.handOverInfo.gameOver;
     state.handOverInfo = null;
     if (wasGameOver) {
+      clearSession();
       window.location.reload();
     } else {
       render();
