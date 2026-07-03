@@ -7,6 +7,13 @@ const app = document.getElementById('app');
 
 const RANK_LABEL = { '2':'2','3':'3','4':'4','5':'5','6':'6', valete:'V', dama:'D', rei:'R', '7':'7', as:'A' };
 
+// Ordre d'affichage de la main : copas, ouros, espadas, paus — puis du plus
+// faible au plus fort dans chaque enseigne.
+const SUIT_ORDER = { copas: 0, ouros: 1, espadas: 2, paus: 3 };
+function sortHand(cards) {
+  return [...cards].sort((a, b) => SUIT_ORDER[a.suit] - SUIT_ORDER[b.suit] || a.strength - b.strength);
+}
+
 // Enseignes du jeu portugais (Sueca) : épées, coupes, deniers, bâtons.
 // SVG simples et génériques, dessinés pour cette interface (aucune
 // reproduction d'un jeu de cartes existant). "1em" + currentColor pour
@@ -301,7 +308,7 @@ function renderGame() {
   }).join('');
 
   const playableIds = new Set((hand.playableCards || []).map(cardId));
-  const myHandHtml = hand.myHand.map((c) => {
+  const myHandHtml = sortHand(hand.myHand).map((c) => {
     const isPlayable = myTurn && playableIds.has(cardId(c));
     return renderCard(c, isPlayable ? 'playable' : (myTurn ? 'unplayable' : ''));
   }).join('');
