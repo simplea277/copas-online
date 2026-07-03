@@ -148,6 +148,39 @@ test('3 joueurs : après le 3e pli, plus de restriction (couleur obligatoire, co
   assert.ok(playable.some((c) => c.suit === 'copas'), 'copas doit être jouable après la phase spéciale');
 });
 
+function playFullHand(players, dealerIndex = 0) {
+  const hand = engine.dealNewHand(players, dealerIndex);
+  let guard = 0;
+  while (!hand.finished) {
+    const playerId = hand.players[hand.turnIndex];
+    const playable = engine.getPlayableCards(hand, playerId);
+    const res = engine.playCard(hand, playerId, playable[0]);
+    assert.ok(res.ok, res.error);
+    guard += 1;
+    if (guard > 1000) throw new Error('Boucle infinie suspectée dans la simulation.');
+  }
+  return hand;
+}
+
+test('Simulation complète d\'une manche à 3 joueurs : toutes les mains vidées, 13 plis, 10 copas au total', () => {
+  const players = ['A', 'B', 'C'];
+  const hand = playFullHand(players);
+  players.forEach((p) => assert.strictEqual(hand.hands[p].length, 0));
+  assert.strictEqual(hand.drawPile.length, 0);
+  assert.strictEqual(hand.tricksPlayed, 13); // 39 cartes / 3 joueurs
+  const totalCopas = Object.values(hand.tricksWonCopas).reduce((a, b) => a + b, 0);
+  assert.strictEqual(totalCopas, 10);
+});
+
+test('Simulation complète d\'une manche à 4 joueurs : toutes les mains vidées, 10 plis, 10 copas au total', () => {
+  const players = ['A', 'B', 'C', 'D'];
+  const hand = playFullHand(players);
+  players.forEach((p) => assert.strictEqual(hand.hands[p].length, 0));
+  assert.strictEqual(hand.tricksPlayed, 10); // 40 cartes / 4 joueurs
+  const totalCopas = Object.values(hand.tricksWonCopas).reduce((a, b) => a + b, 0);
+  assert.strictEqual(totalCopas, 10);
+});
+
 // ---------------------------------------------------------------------------
 test('Score : 0 copa ramassée ne change rien si pas de suspens', () => {
   const scores = engine.createInitialScores(['A', 'B']);

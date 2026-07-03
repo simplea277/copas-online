@@ -179,7 +179,11 @@ function resolveTrick(hand) {
   hand.leaderIndex = winnerIndex;
   hand.turnIndex = winnerIndex;
 
-  const handOver = hand.tricksPlayed >= 10;
+  // La manche se termine quand toutes les mains sont vides. On ne peut pas
+  // se fier à un nombre de plis fixe : à 3 joueurs, la pioche de 9 cartes
+  // pendant les 3 premiers plis rallonge la manche à 13 plis (39 cartes ÷ 3),
+  // pas 10 — sinon des cartes (et des copas) restent injouées.
+  const handOver = hand.players.every((p) => hand.hands[p].length === 0);
   if (handOver) hand.finished = true;
 
   return { trick: finishedTrick, winnerId, copasInTrick, drawnCards, handOver };
