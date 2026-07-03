@@ -276,6 +276,51 @@ button.secondary {
   justify-content: center;
 }
 
+/* Rangée pli + pioche (3 joueurs) côte à côte, pour ne jamais empiéter sur
+   la zone du pli en cours. align-items: flex-end pour aligner le bas de la
+   carte de pioche sur le bas des cartes du pli (hauteurs différentes).
+   Décalage supplémentaire sur .draw-pile pour ne pas coller aux cartes
+   centrales du pli. */
+.trick-row {
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  gap: 20px;
+}
+
+/* Pioche visible (3 joueurs) — une seule carte dos face cachée pour évoquer
+   le tas (le léger box-shadow décalé suggère les cartes en-dessous, sans
+   empiler plusieurs éléments), avec le nombre de cartes restantes affiché
+   directement sur le dos de la carte. Reste affiché tant qu'il reste des
+   cartes, mis à jour en direct via hand.drawPileCount, disparaît simplement
+   (rendu conditionnel) une fois épuisée. */
+.draw-pile {
+  position: relative;
+  flex-shrink: 0;
+  margin-left: 20px; /* décalage pour ne pas coller au pli en cours */
+}
+.draw-pile .draw-pile-card {
+  width: 40px;
+  height: 56px;
+  box-shadow:
+    2px 2px 0 rgba(245,239,224,0.12),
+    0 3px 8px var(--shadow),
+    inset 0 0 0 2px rgba(245,239,224,0.25);
+}
+.draw-pile-count {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--ivory);
+  font-family: var(--font-display);
+  font-size: 1.3rem;
+  font-weight: 800;
+  text-shadow: 0 2px 4px rgba(0,0,0,0.5);
+  z-index: 3;
+}
+
 .status-line {
   text-align: center;
   font-size: 0.9rem;
@@ -440,6 +485,71 @@ button.secondary {
 .score-chip .name { font-size: 0.72rem; color: var(--ivory-dim); }
 .score-chip .real { font-family: var(--font-display); font-size: 1.3rem; font-weight: 700; }
 .score-chip.me { box-shadow: 0 0 0 2px var(--gold); }
+
+/* Badge donneur — jeton "D" façon poker, sur l'opponent chip ou le score-chip
+   du joueur qui donne la manche en cours. Reste affiché tant que dure la
+   manche, change de joueur à la manche suivante (hand.dealerIndex). */
+.dealer-badge {
+  position: absolute;
+  top: -8px;
+  left: -8px;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: linear-gradient(180deg, var(--gold), #a97f2c);
+  color: var(--felt-dark);
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: 0.7rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 2px 6px var(--shadow), 0 0 0 2px var(--felt);
+  z-index: 2;
+}
+
+/* Distribution des cartes — ma main pas encore révélée : dos de carte en
+   éventail à la place, le temps de l'animation d'envol. */
+.my-hand-pending .pcard.card-back { flex-shrink: 0; }
+
+/* Calque plein écran, purement décoratif (clics transparents), où les
+   petits paquets de cartes s'envolent du donneur vers chaque joueur. */
+#deal-anim-layer {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 55; /* au-dessus de la table, sous le bouton "Quitter" (60) */
+}
+/* Paquet groupé (2-3 cartes) — utilisé pour le dépôt de la pioche au centre. */
+.deal-packet {
+  position: fixed;
+  width: 30px;
+  height: 42px;
+  border-radius: 4px;
+  background: linear-gradient(155deg, var(--azulejo), var(--azulejo-light));
+  box-shadow:
+    2px 2px 0 rgba(245,239,224,0.15),
+    4px 4px 0 rgba(245,239,224,0.08),
+    0 3px 8px var(--shadow);
+  opacity: 1;
+  transform: translate(0, 0);
+  transition: transform 0.36s cubic-bezier(.22,.85,.35,1), opacity 0.15s ease 0.21s;
+}
+
+/* Carte individuelle — utilisée pour la distribution des mains, une carte à
+   la fois. Plus petite et plus rapide que .deal-packet pour rester lisible
+   au rythme rapproché de la distribution. */
+.deal-card {
+  position: fixed;
+  width: 26px;
+  height: 36px;
+  border-radius: 4px;
+  background: linear-gradient(155deg, var(--azulejo), var(--azulejo-light));
+  box-shadow: 0 3px 8px var(--shadow), inset 0 0 0 1px rgba(245,239,224,0.3);
+  opacity: 1;
+  transform: translate(0, 0);
+  transition: transform 0.32s cubic-bezier(.22,.85,.35,1), opacity 0.12s ease 0.2s;
+}
 
 .suspended-float {
   position: absolute;

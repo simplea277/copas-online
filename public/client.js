@@ -94,7 +94,159 @@ const state = {
   lastTrickRevealed: false, // le widget est-il actuellement retourné (cartes visibles) ?
   handOverInfo: null,   // payload de game:handOver, tant que l'overlay est affiché
   joining: false,
+  dealAnim: null,       // { id, phase: 'cards'|'pile', phaseStarted, sequence } tant que l'animation de distribution joue
 };
+
+let dealAnimCounter = 0;
+
+function prefersReducedMotion() {
+  return window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+}
+
+// Séquence complète de la distribution, comme une vraie donne : 10 tours,
+// à chaque tour une carte pour chaque joueur en partant de celui après le
+// donneur, le donneur se servant en dernier à chaque tour.
+function computeDealSequence(hand) {
+  const n = hand.numPlayers;
+  const sequence = [];
+  for (let round = 0; round < 10; round++) {
+    for (let i = 1; i <= n; i++) sequence.push(hand.players[(hand.dealerIndex + i) % n]);
+  }
+  return sequence;
+}
+
+// Point d'entrée générique : lance l'étape en cours (`cards` ou `pile`) de
+// l'animation de distribution. Purement cosmétique — si l'animation est
+// périmée (une manche/étape plus récente est arrivée entre-temps), chaque
+// étape se contente de ne rien faire au lieu de planter ou d'écraser l'état
+// affiché.
+function runDealPhase(animId, phase) {
+  const dealAnim = state.dealAnim;
+  if (!dealAnim || dealAnim.id !== animId || dealAnim.phase !== phase) return;
+  if (phase === 'cards') runCardsPhase(animId);
+  else if (phase === 'pile') runPilePhase(animId);
+}
+
+// Étape 1 : les cartes s'envolent une par une du donneur vers chaque joueur,
+// dans l'ordre du jeu, jusqu'à ce que tout le monde (donneur compris) ait
+// ses 10 cartes.
+function runCardsPhase(animId) {
+  const dealAnim = state.dealAnim;
+  const hand = state.hand;
+  const layer = document.getElementById('deal-anim-layer');
+  const dealerId = hand && hand.players[hand.dealerIndex];
+  const dealerEl = dealerId && document.querySelector(`[data-anchor="player-${dealerId}"]`);
+  if (!dealAnim || !hand || !layer || !dealerEl) { advanceDealAnim(animId); return; }
+
+  const dealerRect = dealerEl.getBoundingClientRect();
+  const startX = dealerRect.left + dealerRect.width / 2 - 13;
+  const startY = dealerRect.top + dealerRect.height / 2 - 18;
+
+  const STAGGER = 85; // ~80-120ms entre chaque carte, ajusté après test visuel
+  const FLIGHT = 320;
+
+  dealAnim.sequence.forEach((pid, i) => {
+    setTimeout(() => {
+      if (!state.dealAnim || state.dealAnim.id !== animId || state.dealAnim.phase !== 'cards') return;
+      const targetEl = document.querySelector(`[data-anchor="player-${pid}"]`);
+      const currentLayer = document.getElementById('deal-anim-layer');
+      if (!targetEl || !currentLayer) return;
+
+      const targetRect = targetEl.getBoundingClientRect();
+      const dx = (targetRect.left + targetRect.width / 2 - 13) - startX;
+      const dy = (targetRect.top + targetRect.height / 2 - 18) - startY;
+
+      const card = document.createElement('div');
+      card.className = 'deal-card';
+      card.style.left = `${startX}px`;
+      card.style.top = `${startY}px`;
+      currentLayer.appendChild(card);
+      card.getBoundingClientRect(); // force le reflow avant de déclencher la transition
+      card.style.transform = `translate(${dx}px, ${dy}px) rotate(${i % 2 === 0 ? -6 : 6}deg)`;
+      card.style.opacity = '0';
+
+      setTimeout(() => card.remove(), FLIGHT + 60);
+    }, i * STAGGER);
+  });
+
+  const total = dealAnim.sequence.length * STAGGER + FLIGHT + 120;
+  setTimeout(() => {
+    if (!state.dealAnim || state.dealAnim.id !== animId || state.dealAnim.phase !== 'cards') return;
+    advanceDealAnim(animId);
+  }, total);
+}
+
+// Une fois les mains distribuées : à 3 joueurs, la pioche (le reste du
+// paquet) passe à l'étape "pile" (dépôt animé au centre) ; sinon, terminé.
+function advanceDealAnim(animId) {
+  if (!state.dealAnim || state.dealAnim.id !== animId) return;
+  const hand = state.hand;
+  if (hand && hand.numPlayers === 3 && hand.drawPileCount > 0) {
+    state.dealAnim.phase = 'pile';
+    state.dealAnim.phaseStarted = false;
+    render();
+  } else {
+    state.dealAnim = null;
+    render();
+  }
+}
+
+// Étape 2 (3 joueurs uniquement) : anime le dépôt des cartes restantes en un
+// petit tas au centre de la table, façon pioche. Le tas lui-même (avec le
+// compte à jour) est du HTML normal rendu par renderGame() dès que cette
+// étape commence ; ces paquets volants ne sont qu'une décoration qui atterrit
+// dessus.
+function runPilePhase(animId) {
+  const dealAnim = state.dealAnim;
+  const hand = state.hand;
+  const layer = document.getElementById('deal-anim-layer');
+  const dealerId = hand && hand.players[hand.dealerIndex];
+  const dealerEl = dealerId && document.querySelector(`[data-anchor="player-${dealerId}"]`);
+  const pileEl = document.querySelector('[data-anchor="draw-pile"]');
+  if (!dealAnim || !hand || !layer || !dealerEl || !pileEl) { finishDealAnim(animId); return; }
+
+  const dealerRect = dealerEl.getBoundingClientRect();
+  const startX = dealerRect.left + dealerRect.width / 2 - 15;
+  const startY = dealerRect.top + dealerRect.height / 2 - 21;
+  const pileRect = pileEl.getBoundingClientRect();
+  const endX = pileRect.left + pileRect.width / 2 - 15;
+  const endY = pileRect.top + pileRect.height / 2 - 21;
+
+  const PACKETS = 4;
+  const STAGGER = 90;
+  const FLIGHT = 360;
+
+  for (let i = 0; i < PACKETS; i++) {
+    setTimeout(() => {
+      if (!state.dealAnim || state.dealAnim.id !== animId || state.dealAnim.phase !== 'pile') return;
+      const currentLayer = document.getElementById('deal-anim-layer');
+      if (!currentLayer) return;
+
+      const packet = document.createElement('div');
+      packet.className = 'deal-packet';
+      packet.style.left = `${startX}px`;
+      packet.style.top = `${startY}px`;
+      currentLayer.appendChild(packet);
+      packet.getBoundingClientRect();
+      packet.style.transform = `translate(${endX - startX}px, ${endY - startY}px) rotate(${i % 2 === 0 ? -10 : 10}deg)`;
+      packet.style.opacity = '0';
+
+      setTimeout(() => packet.remove(), FLIGHT + 60);
+    }, i * STAGGER);
+  }
+
+  const total = PACKETS * STAGGER + FLIGHT + 150;
+  setTimeout(() => {
+    if (!state.dealAnim || state.dealAnim.id !== animId || state.dealAnim.phase !== 'pile') return;
+    finishDealAnim(animId);
+  }, total);
+}
+
+function finishDealAnim(animId) {
+  if (!state.dealAnim || state.dealAnim.id !== animId) return;
+  state.dealAnim = null;
+  render();
+}
 
 function cardId(c) { return `${c.suit}-${c.rank}`; }
 
@@ -297,12 +449,16 @@ function renderGame() {
   const myId = state.myId;
   const others = hand.players.filter((p) => p !== myId);
   const myTurn = hand.turnPlayerId === myId && !state.handOverInfo;
+  const dealerId = hand.players[hand.dealerIndex];
+
+  const dealerBadge = `<div class="dealer-badge" title="Donneur">D</div>`;
 
   const opponentsHtml = others.map((pid) => {
     const count = hand.handSizes[pid] ?? 0;
     const active = hand.turnPlayerId === pid;
     const miniCards = Array.from({ length: Math.min(count, 10) }).map(() => `<div class="mc"></div>`).join('');
-    return `<div class="opponent ${active ? 'active-turn' : ''}">
+    return `<div class="opponent ${active ? 'active-turn' : ''}" data-anchor="player-${pid}">
+      ${pid === dealerId ? dealerBadge : ''}
       <div class="name">${playerName(pid)}</div>
       <div class="mini-cards">${miniCards}</div>
       <div class="cardcount">${count} cartes</div>
@@ -323,6 +479,21 @@ function renderGame() {
     statusText = myTurn ? 'À toi de jouer !' : `Au tour de ${playerName(hand.turnPlayerId)}…`;
   }
 
+  // Pioche visible (3 joueurs uniquement) : un petit tas de dos de carte au
+  // centre, avec le nombre de cartes restantes. Caché tant que la phase
+  // "cards" de la distribution tourne encore (elle n'apparaît qu'une fois
+  // que le donneur a fini de se servir), et disparaît proprement une fois
+  // épuisée (drawPileCount === 0).
+  const cardsPhaseActive = !!(state.dealAnim && state.dealAnim.phase === 'cards');
+  const showDrawPile = hand.numPlayers === 3 && hand.drawPileCount > 0 && !cardsPhaseActive;
+  const drawPileHtml = showDrawPile
+    ? `<div class="draw-pile" data-anchor="draw-pile" title="Pioche">
+        <div class="pcard card-back draw-pile-card"></div>
+        <div class="draw-pile-count">${hand.drawPileCount}</div>
+      </div>`
+    : '';
+  const centerRowHtml = drawPileHtml ? `<div class="trick-row">${trickHtml}${drawPileHtml}</div>` : trickHtml;
+
   const specialBanner = hand.specialPhase
     ? `<div class="special-banner">Phase de pioche (plis 1-3) — <strong>pas d'obligation de suivre la couleur</strong>, <strong>copas interdites</strong>${hand.drawPileCount > 0 ? ` · ${hand.drawPileCount} cartes en pioche` : ''}</div>`
     : '';
@@ -330,31 +501,40 @@ function renderGame() {
   const scoreChips = hand.players.map((pid) => {
     const s = room.scores?.[pid] || { real: 0, suspended: 0 };
     return `<div class="score-chip ${pid === myId ? 'me' : ''}">
+      ${pid === dealerId ? dealerBadge : ''}
       ${s.suspended > 0 ? `<div class="suspended-float">${s.suspended} en suspens</div>` : ''}
       <div class="name">${playerName(pid)}</div>
       <div class="real">${s.real}</div>
     </div>`;
   }).join('');
 
+  // Pendant l'étape "cards" de la distribution, ma main n'est pas encore
+  // révélée : on affiche des dos de carte à la place, sans bloquer le reste
+  // de la table. Une fois cette étape terminée (y compris pendant l'étape
+  // "pile" qui suit à 3 joueurs), ma main est révélée et jouable normalement.
+  const dealingInProgress = cardsPhaseActive;
   const playableIds = new Set((hand.playableCards || []).map(cardId));
-  const myHandHtml = sortHand(hand.myHand).map((c) => {
-    const isPlayable = myTurn && playableIds.has(cardId(c));
-    return renderCard(c, isPlayable ? 'playable' : (myTurn ? 'unplayable' : ''));
-  }).join('');
+  const myHandHtml = dealingInProgress
+    ? Array.from({ length: hand.myHand.length }).map(() => `<div class="pcard card-back"></div>`).join('')
+    : sortHand(hand.myHand).map((c) => {
+        const isPlayable = myTurn && playableIds.has(cardId(c));
+        return renderCard(c, isPlayable ? 'playable' : (myTurn ? 'unplayable' : ''));
+      }).join('');
 
   app.innerHTML = `
     <button class="leave-btn" id="btn-leave">Quitter la partie</button>
     ${renderLastTrickWidget()}
+    <div id="deal-anim-layer"></div>
     <div class="screen table-wrap">
       <div class="score-bar">${scoreChips}</div>
       <div class="opponents-row">${opponentsHtml}</div>
       <div class="center-area">
         ${specialBanner}
-        ${trickHtml}
+        ${centerRowHtml}
         <div class="status-line ${myTurn ? 'my-turn' : ''}">${statusText}</div>
       </div>
-      <div class="my-hand-wrap">
-        <div class="my-hand">${myHandHtml}</div>
+      <div class="my-hand-wrap" data-anchor="player-${myId}">
+        <div class="my-hand ${dealingInProgress ? 'my-hand-pending' : ''}">${myHandHtml}</div>
       </div>
     </div>
     ${renderHandOverOverlay()}
@@ -371,7 +551,7 @@ function renderGame() {
     };
   }
 
-  if (myTurn) {
+  if (myTurn && !dealingInProgress) {
     document.querySelectorAll('.my-hand .pcard.playable').forEach((el) => {
       el.onclick = () => {
         const [suit, rank] = el.dataset.card.split('-');
@@ -380,6 +560,13 @@ function renderGame() {
         });
       };
     });
+  }
+
+  if (state.dealAnim && !state.dealAnim.phaseStarted) {
+    state.dealAnim.phaseStarted = true;
+    const animId = state.dealAnim.id;
+    const phase = state.dealAnim.phase;
+    requestAnimationFrame(() => runDealPhase(animId, phase));
   }
 }
 
@@ -467,8 +654,30 @@ socket.on('room:update', (room) => {
 
 socket.on('hand:update', (hand) => {
   if (state.screen === 'home') return;
+  const prevHand = state.hand;
   state.hand = hand;
   if (hand) state.screen = 'game';
+
+  // "Fresh deal" : personne n'a encore joué de carte dans cette manche. On ne
+  // déclenche l'animation que sur la transition vers cet état (pas à chaque
+  // hand:update qui s'y trouverait déjà), pour ne jouer l'envol des cartes
+  // qu'une seule fois par manche.
+  const isFreshDeal = !!hand && hand.tricksPlayed === 0 && hand.currentTrick.length === 0;
+  const wasSamePendingDeal = isFreshDeal && prevHand
+    && prevHand.tricksPlayed === 0 && prevHand.currentTrick.length === 0
+    && prevHand.dealerIndex === hand.dealerIndex && prevHand.numPlayers === hand.numPlayers;
+
+  if (isFreshDeal && !wasSamePendingDeal && !prefersReducedMotion()) {
+    dealAnimCounter += 1;
+    state.dealAnim = { id: dealAnimCounter, phase: 'cards', phaseStarted: false, sequence: computeDealSequence(hand) };
+  } else if (!isFreshDeal && state.dealAnim) {
+    // La partie a avancé (quelqu'un a déjà joué) pendant que l'animation
+    // tournait encore : on l'interrompt proprement, l'état à jour prime.
+    state.dealAnim = null;
+  } else if (isFreshDeal && prefersReducedMotion()) {
+    state.dealAnim = null; // pas d'animation : la main s'affiche tout de suite
+  }
+
   render();
 });
 
