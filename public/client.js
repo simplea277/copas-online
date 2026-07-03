@@ -407,7 +407,7 @@ function renderHandOverOverlay() {
   return `<div class="overlay">
     <div class="overlay-card">
       <h2>${isGameOver ? 'Fin de la partie !' : 'Fin de la manche'}</h2>
-      ${info.earlyEnd ? `<p class="lede" style="margin-top:-8px;">Toutes les copas ont été jouées, la manche s'arrête là — le reste des cartes ne change plus le score.</p>` : ''}
+      ${info.earlyEnd ? `<div class="special-banner" style="margin-bottom:12px;">Toutes les <strong>copas</strong> ont été tirées — la manche s'arrête là, le reste des cartes ne change plus le score.</div>` : ''}
       ${rows}
       ${isGameOver ? `<h3 style="margin-top:16px;">Classement final</h3>${finalRows}` : ''}
       <button class="primary" style="margin-top:16px;" id="btn-continue">${isGameOver ? "Retour à l'accueil" : 'Continuer'}</button>
