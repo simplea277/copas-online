@@ -479,6 +479,14 @@ button.secondary {
   margin-bottom: 8px;
   z-index: 4;
   pointer-events: none;
+  /* État de repos = dernière frame de ghostPop. Le innerHTML est régénéré à
+     chaque render() ; si l'entrée a déjà eu lieu (voir .entering plus bas),
+     on affiche directement cet état final au lieu de rejouer l'animation à
+     chaque remount. */
+  transform: translate(-50%, 0) scale(1);
+  opacity: 1;
+}
+.just-drawn-ghost.entering {
   animation: ghostPop 0.5s ease-out forwards;
 }
 @keyframes ghostPop {
@@ -487,6 +495,9 @@ button.secondary {
   100% { transform: translate(-50%, 0) scale(1); opacity: 1; }
 }
 .my-hand .pcard.just-drawn {
+  box-shadow: 0 3px 8px var(--shadow);
+}
+.my-hand .pcard.just-drawn.entering {
   animation: justDrawnSettle 1s cubic-bezier(.22,.8,.3,1);
 }
 @keyframes justDrawnSettle {
@@ -495,7 +506,7 @@ button.secondary {
   100% { transform: translateY(0) scale(1); box-shadow: 0 3px 8px var(--shadow); }
 }
 @media (prefers-reduced-motion: reduce) {
-  .just-drawn-ghost, .my-hand .pcard.just-drawn { animation: none; }
+  .just-drawn-ghost.entering, .my-hand .pcard.just-drawn.entering { animation: none; }
 }
 
 /* Score bar */

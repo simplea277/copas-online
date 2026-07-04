@@ -80,6 +80,7 @@ function leaveGame() {
   state.justDrawnCard = null;
   state.justDrawnCardId = null;
   state.justDrawnStage = null;
+  state.justDrawnStageStartedAt = null;
   render();
 }
 
@@ -104,6 +105,9 @@ const state = {
   justDrawnCard: null,  // carte que je viens de piocher (contenu réel, seulement chez moi)
   justDrawnCardId: null, // cardId() de justDrawnCard, pour la retrouver/comparer
   justDrawnStage: null, // 'ghost' (au-dessus de la main) -> 'settle' (dans la main, mise en évidence) -> null
+  justDrawnStageStartedAt: null, // Date.now() du dernier changement de justDrawnStage, pour reprendre
+                                 // l'animation CSS au bon endroit (animation-delay négatif) si un
+                                 // render() intercurrent recrée l'élément en plein milieu de l'entrée.
 };
 
 let dealAnimCounter = 0;
@@ -281,14 +285,17 @@ function startDrawAnim(payload) {
     state.justDrawnCard = payload.myDrawnCard;
     state.justDrawnCardId = drawnId;
     state.justDrawnStage = 'ghost';
+    state.justDrawnStageStartedAt = Date.now();
 
     setTimeout(() => {
       if (state.justDrawnCardId !== drawnId) return; // remplacée entre-temps par une pioche plus récente
       state.justDrawnStage = 'settle';
+      state.justDrawnStageStartedAt = Date.now();
       render();
       setTimeout(() => {
         if (state.justDrawnCardId !== drawnId) return;
         state.justDrawnStage = null;
+        state.justDrawnStageStartedAt = null;
         state.justDrawnCardId = null;
         state.justDrawnCard = null;
         render();
@@ -351,11 +358,12 @@ function finishDrawAnim(animId) {
 
 function cardId(c) { return `${c.suit}-${c.rank}`; }
 
-function renderCard(card, extraClass = '') {
+function renderCard(card, extraClass = '', extraStyle = '') {
   if (!card) return `<div class="pcard placeholder"></div>`;
   const sym = SUIT_SVG[card.suit];
   const label = RANK_LABEL[card.rank];
-  return `<div class="pcard suit-${card.suit} ${extraClass}" data-card="${cardId(card)}">
+  const styleAttr = extraStyle ? ` style="${extraStyle}"` : '';
+  return `<div class="pcard suit-${card.suit} ${extraClass}" data-card="${cardId(card)}"${styleAttr}>
     <div class="rank-top">${label}<br>${sym}</div>
     <div class="suit-icon">${sym}</div>
     <div class="rank-bottom">${label}<br>${sym}</div>
@@ -623,12 +631,31 @@ function renderGame() {
   // elle est retirée de la liste normale et affichée à part, face visible,
   // au-dessus de la main ; au stade "settle", elle réapparaît dans la liste
   // triée avec une brève mise en évidence.
+  //
+  // render() régénère tout le innerHTML à chaque appel, y compris pendant
+  // les 2,2s/1,1s de ces deux stades (un hand:update lié au tour d'un autre
+  // joueur, par ex., peut très bien arriver et déclencher un render() entre-
+  // temps). Un simple remount de l'élément relancerait son animation CSS
+  // d'entrée depuis 0% à chaque fois ("repop" visuel). Pour l'éviter, on ne
+  // rejoue l'animation que le temps qu'elle dure réellement (GHOST/SETTLE_MS,
+  // à faire correspondre aux durées définies dans style.css) : passé ce délai
+  // la carte est affichée directement dans son état final, sans classe
+  // "entering" ; et si un remount survient en plein milieu, un animation-
+  // delay négatif reprend l'animation à l'endroit où elle en était plutôt que
+  // de la relancer depuis le début.
+  const GHOST_ANIM_MS = 500;
+  const SETTLE_ANIM_MS = 1000;
   const ghostActive = state.justDrawnStage === 'ghost' && state.justDrawnCardId;
+  const ghostElapsed = ghostActive ? Date.now() - (state.justDrawnStageStartedAt || Date.now()) : 0;
+  const ghostEntering = ghostActive && ghostElapsed < GHOST_ANIM_MS;
+  const settleElapsed = state.justDrawnStage === 'settle' ? Date.now() - (state.justDrawnStageStartedAt || Date.now()) : 0;
+  const settleEntering = state.justDrawnStage === 'settle' && settleElapsed < SETTLE_ANIM_MS;
+
   const visibleMyHand = ghostActive
     ? hand.myHand.filter((c) => cardId(c) !== state.justDrawnCardId)
     : hand.myHand;
   const justDrawnGhostHtml = ghostActive
-    ? `<div class="just-drawn-ghost">${renderCard(state.justDrawnCard, 'just-drawn-card')}</div>`
+    ? `<div class="just-drawn-ghost${ghostEntering ? ' entering' : ''}"${ghostEntering ? ` style="animation-delay:-${ghostElapsed}ms"` : ''}>${renderCard(state.justDrawnCard, 'just-drawn-card')}</div>`
     : '';
 
   const myHandHtml = dealingInProgress
@@ -636,9 +663,10 @@ function renderGame() {
     : sortHand(visibleMyHand).map((c) => {
         const isPlayable = myTurn && playableIds.has(cardId(c));
         const isJustDrawn = state.justDrawnStage === 'settle' && cardId(c) === state.justDrawnCardId;
-        const cls = [isPlayable ? 'playable' : (myTurn ? 'unplayable' : ''), isJustDrawn ? 'just-drawn' : '']
+        const cls = [isPlayable ? 'playable' : (myTurn ? 'unplayable' : ''), isJustDrawn ? 'just-drawn' : '', (isJustDrawn && settleEntering) ? 'entering' : '']
           .filter(Boolean).join(' ');
-        return renderCard(c, cls);
+        const style = (isJustDrawn && settleEntering) ? `animation-delay:-${settleElapsed}ms` : '';
+        return renderCard(c, cls, style);
       }).join('');
 
   app.innerHTML = `
@@ -812,6 +840,7 @@ socket.on('hand:update', (hand) => {
     state.justDrawnCard = null;
     state.justDrawnCardId = null;
     state.justDrawnStage = null;
+    state.justDrawnStageStartedAt = null;
   }
 
   render();
@@ -841,6 +870,7 @@ socket.on('game:handOver', (payload) => {
   state.justDrawnCard = null;
   state.justDrawnCardId = null;
   state.justDrawnStage = null;
+  state.justDrawnStageStartedAt = null;
   render();
 });
 
