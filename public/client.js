@@ -541,7 +541,7 @@ function renderHome() {
   app.innerHTML = `
     <div class="screen" style="justify-content:center;">
       <h1>Copas <span class="accent">Online</span></h1>
-      <p class="lede">Ramasse le moins de copas possible</p>
+      <p class="lede">Entraîne-toi, et un jour, peut-être, tu pourras battre le grand maître de la Copas, Alan S. dit "L'Insubmersible".</p>
       ${errorBox()}
       <div class="card-panel">
         <button class="primary" id="btn-create">Créer une partie</button>
