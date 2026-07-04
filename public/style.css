@@ -340,8 +340,10 @@ button.secondary {
 }
 .special-banner strong { color: var(--gold); }
 
-/* Dernier pli résolu — widget discret sur le bord droit de l'écran, replié
-   en une carte face cachée qu'on retourne d'un clic pour le consulter. */
+/* Tas "plis joués" — widget discret sur le bord droit de l'écran, replié en
+   un tas de dos de carte empilés qu'on retourne d'un clic pour voir le
+   dernier pli résolu. Grossit au fil de la manche (voir runTrickPileAnim
+   dans client.js), remis à zéro à chaque nouvelle manche. */
 .last-trick-widget {
   position: fixed;
   top: 50%;
@@ -370,6 +372,48 @@ button.secondary {
   max-width: 96px;
 }
 .last-trick-cards { display: flex; gap: 3px; }
+
+/* Tas fermé : plusieurs dos de carte quasiment au même endroit, avec juste un
+   petit décalage en X/Y et un angle de rotation propre à chaque position
+   (nth-child), pour un effet de petit tas négligé plutôt qu'une colonne ou
+   un empilement bien net. Décalages fixes (pas de random au rendu) pour ne
+   pas "gigoter" à chaque re-render — seul le nombre de cartes affichées
+   change, plafonné à 6 même si la manche compte plus de plis.
+   Sélecteur .pcard.trick-pile-card (3 classes) plutôt que .trick-pile-card
+   seul : .pcard.card-back a la même spécificité (2 classes) que
+   .trick-pile-stack .trick-pile-card et le suit dans le fichier, donc son
+   position:relative gagnait le conflit et cassait l'empilement (cartes
+   rendues en colonne au lieu de superposées). */
+.trick-pile-stack {
+  position: relative;
+  width: 40px;
+  height: 52px;
+}
+.trick-pile-stack .pcard.trick-pile-card {
+  position: absolute;
+  top: 3px;
+  left: 3px;
+}
+.trick-pile-stack .pcard.trick-pile-card:nth-child(1) { transform: rotate(-18deg) translate(-4px, 3px); }
+.trick-pile-stack .pcard.trick-pile-card:nth-child(2) { transform: rotate(13deg) translate(5px, -2px); }
+.trick-pile-stack .pcard.trick-pile-card:nth-child(3) { transform: rotate(-23deg) translate(2px, 5px); }
+.trick-pile-stack .pcard.trick-pile-card:nth-child(4) { transform: rotate(20deg) translate(-5px, -4px); }
+.trick-pile-stack .pcard.trick-pile-card:nth-child(5) { transform: rotate(-9deg) translate(4px, 2px); }
+.trick-pile-stack .pcard.trick-pile-card:nth-child(6) { transform: rotate(25deg) translate(-3px, -5px); }
+
+/* Carte volante d'un pli résolu en route vers le tas (voir runTrickPileAnim).
+   Même recette que .deal-card : élément décoratif indépendant du cycle de
+   rendu, positionné en fixed puis animé via transform, jamais un obstacle
+   aux clics (pointer-events:none hérité de #deal-anim-layer). */
+.trick-fly-card {
+  position: fixed;
+  border-radius: 6px;
+  background: linear-gradient(155deg, var(--azulejo), var(--azulejo-light));
+  box-shadow: 0 3px 8px var(--shadow), inset 0 0 0 2px rgba(245,239,224,0.25);
+  opacity: 1;
+  transform: translate(0, 0) rotate(0deg);
+  transition: transform 0.42s cubic-bezier(.22,.85,.35,1), opacity 0.3s ease 0.15s;
+}
 .pcard.mini {
   width: 30px;
   height: 42px;

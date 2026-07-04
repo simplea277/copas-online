@@ -83,6 +83,7 @@ function leaveGame() {
   state.justDrawnCardId = null;
   state.justDrawnStage = null;
   state.justDrawnStageStartedAt = null;
+  state.trickPileCount = 0;
   render();
 }
 
@@ -121,6 +122,15 @@ const state = {
   justDrawnStageStartedAt: null, // Date.now() du dernier changement de justDrawnStage, pour reprendre
                                  // l'animation CSS au bon endroit (animation-delay négatif) si un
                                  // render() intercurrent recrée l'élément en plein milieu de l'entrée.
+  trickPileCount: 0, // nombre de plis accumulés dans le tas "plis joués" (voir
+                     // renderLastTrickWidget) ; incrémenté seulement une fois l'animation
+                     // d'envol du pli vers ce tas terminée (pas dès la résolution du pli),
+                     // pour ne jamais faire grossir le tas avant que l'animation ne l'ait
+                     // montré visuellement.
+  handGeneration: 0, // incrémenté à chaque nouvelle manche (fresh deal) ; permet à une
+                     // complétion tardive de l'animation d'envol du pli (voir
+                     // runTrickPileAnim) de détecter qu'une nouvelle manche a démarré
+                     // entre-temps et de ne pas faire grossir le tas déjà remis à zéro.
 };
 
 let dealAnimCounter = 0;
@@ -403,6 +413,65 @@ function finishDrawAnim(animId) {
   render();
 }
 
+// ---------------------------------------------------------------------------
+// Animation de fin de pli — les cartes du pli résolu s'envolent vers le tas
+// "plis joués" (widget sur le bord droit, voir renderLastTrickWidget) au lieu
+// de simplement disparaître. sourceRects vient de game:trickResolved (rects
+// capturés juste avant que les cartes ne quittent .trick-slots).
+//
+// Contrairement à la pioche, il n'y a pas besoin d'id de séquence pour se
+// protéger d'un chevauchement : trickPileCount n'est jamais qu'incrémenté de
+// 1, jamais recalculé à partir d'un instantané — que plusieurs envols se
+// chevauchent (plis enchaînés très vite) ne peut donc pas le corrompre.
+// handGen protège seulement contre une complétion tardive qui tomberait
+// après le début d'une nouvelle manche (trickPileCount déjà remis à zéro).
+function runTrickPileAnim(sourceRects, handGen) {
+  const bumpCount = () => {
+    if (state.handGeneration !== handGen) return; // nouvelle manche entre-temps : ce pli n'y a plus sa place
+    state.trickPileCount += 1;
+    render();
+  };
+
+  if (prefersReducedMotion() || sourceRects.length === 0) { bumpCount(); return; }
+
+  const layer = document.getElementById('deal-anim-layer');
+  const pileEl = document.querySelector('[data-anchor="trick-pile"]');
+  if (!layer || !pileEl) { bumpCount(); return; }
+
+  const pileRect = pileEl.getBoundingClientRect();
+  const targetX = pileRect.left + pileRect.width / 2 - 13;
+  const targetY = pileRect.top + pileRect.height / 2 - 18;
+
+  const STAGGER = 70;
+  const FLIGHT = 420;
+
+  sourceRects.forEach((rect, i) => {
+    setTimeout(() => {
+      const currentLayer = document.getElementById('deal-anim-layer');
+      if (!currentLayer) return;
+
+      const card = document.createElement('div');
+      card.className = 'trick-fly-card';
+      card.style.left = `${rect.left}px`;
+      card.style.top = `${rect.top}px`;
+      card.style.width = `${rect.width}px`;
+      card.style.height = `${rect.height}px`;
+      currentLayer.appendChild(card);
+      card.getBoundingClientRect();
+
+      const dx = targetX - rect.left;
+      const dy = targetY - rect.top;
+      const rot = (i % 2 === 0 ? -1 : 1) * (12 + i * 7);
+      card.style.transform = `translate(${dx}px, ${dy}px) rotate(${rot}deg) scale(0.6)`;
+      card.style.opacity = '0.5';
+
+      setTimeout(() => card.remove(), FLIGHT + 60);
+    }, i * STAGGER);
+  });
+
+  setTimeout(bumpCount, sourceRects.length * STAGGER + FLIGHT + 80);
+}
+
 function cardId(c) { return `${c.suit}-${c.rank}`; }
 
 function renderCard(card, extraClass = '', extraStyle = '') {
@@ -572,20 +641,26 @@ function renderLobby() {
   document.getElementById('btn-leave-lobby').onclick = () => leaveGame();
 }
 
-// Widget fixe sur le côté droit de l'écran : une carte face cachée qu'on
-// retourne d'un clic pour voir le dernier pli résolu, et qu'on recache d'un
-// second clic.
+// Widget fixe sur le côté droit de l'écran : le tas des plis joués (cartes
+// dos cachées empilées façon négligée), qui grossit au fil de la manche à
+// mesure que chaque pli résolu s'y envole (voir runTrickPileAnim). Un clic
+// affiche le dernier pli résolu (cartes réelles + gagnant), un second clic
+// referme. N'existe pas tant qu'aucun pli n'a encore visuellement atterri
+// dans le tas (trickPileCount toujours à 0 pendant l'envol du tout premier
+// pli) — data-anchor="trick-pile" sert de cible à cette animation.
 function renderLastTrickWidget() {
-  if (!state.lastTrick) return '';
+  if (state.trickPileCount <= 0) return '';
 
   if (!state.lastTrickRevealed) {
-    return `<div class="last-trick-widget" id="last-trick-widget" title="Voir le dernier pli">
-      <div class="pcard mini card-back"></div>
+    const layers = Math.min(state.trickPileCount, 6);
+    const stackCards = Array.from({ length: layers }).map(() => `<div class="pcard mini card-back trick-pile-card"></div>`).join('');
+    return `<div class="last-trick-widget" id="last-trick-widget" data-anchor="trick-pile" title="Voir le dernier pli">
+      <div class="trick-pile-stack">${stackCards}</div>
     </div>`;
   }
 
   const t = state.lastTrick;
-  return `<div class="last-trick-widget revealed" id="last-trick-widget" title="Cacher le dernier pli">
+  return `<div class="last-trick-widget revealed" id="last-trick-widget" data-anchor="trick-pile" title="Cacher le dernier pli">
     <div class="last-trick-label">Dernier pli — ${playerName(t.winnerId)}${t.copasInTrick > 0 ? ` (+${t.copasInTrick} ${SUIT_SVG.copas})` : ''}</div>
     <div class="last-trick-cards">${t.trick.map((e) => renderCard(e.card, 'mini')).join('')}</div>
   </div>`;
@@ -745,7 +820,7 @@ function renderGame() {
     if (confirm('Quitter la partie ? Tu ne pourras pas revenir dans cette manche.')) leaveGame();
   };
 
-  if (state.lastTrick) {
+  if (state.trickPileCount > 0) {
     document.getElementById('last-trick-widget').onclick = () => {
       state.lastTrickRevealed = !state.lastTrickRevealed;
       render();
@@ -895,6 +970,8 @@ socket.on('hand:update', (hand) => {
     state.justDrawnCardId = null;
     state.justDrawnStage = null;
     state.justDrawnStageStartedAt = null;
+    state.trickPileCount = 0;
+    state.handGeneration += 1;
   }
 
   render();
@@ -932,11 +1009,23 @@ socket.on('game:trickResolved', (payload) => {
   state.lastTrickRevealed = false; // nouveau pli = widget refermé, à retourner à nouveau pour le voir
   render();
   setTimeout(() => {
+    // Capture les positions des cartes du pli résolu AVANT qu'elles ne
+    // disparaissent du DOM : le render() juste après les retire de
+    // .trick-slots (state.trickResult repasse à null), donc ces rects sont
+    // le seul moyen de savoir d'où les cartes doivent s'envoler vers le tas.
+    const sourceRects = Array.from(document.querySelectorAll('.trick-slots .pcard'))
+      .map((el) => el.getBoundingClientRect());
+    const handGenAtCapture = state.handGeneration;
+
     state.trickResult = null;
     // Fin des 3 premiers plis (3 joueurs) : si des cartes ont été piochées,
     // rejoue une petite distribution depuis la pioche vers chaque joueur.
     startDrawAnim(payload, myDrawSeqId);
     render();
+
+    // Envole les cartes du pli résolu vers le tas "plis joués" (bord droit)
+    // au lieu de les laisser simplement disparaître.
+    runTrickPileAnim(sourceRects, handGenAtCapture);
   }, 1400);
 });
 
@@ -952,6 +1041,7 @@ socket.on('game:handOver', (payload) => {
   state.justDrawnCardId = null;
   state.justDrawnStage = null;
   state.justDrawnStageStartedAt = null;
+  state.trickPileCount = 0;
   render();
 });
 
