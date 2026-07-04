@@ -492,7 +492,7 @@ function renderCard(card, extraClass = '', extraStyle = '') {
 // Pseudos suggérés sur les écrans "Créer"/"Rejoindre" : boutons rapides en
 // plus du champ libre, pour éviter à un groupe d'amis habitué de retaper son
 // prénom à chaque partie.
-const SUGGESTED_NAMES = ['Alan', 'Romane', 'Mika', 'Capu', 'Sergio'];
+const SUGGESTED_NAMES = ['Alan', 'Romane', 'Mika', 'Capu'];
 
 function renderNameSuggestions() {
   return `<div class="choice-row name-suggestions">
