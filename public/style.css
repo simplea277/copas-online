@@ -393,18 +393,18 @@ button.secondary {
 
 /* Playing card */
 .pcard {
-  width: 44px;
-  height: 61px;
-  border-radius: 7px;
+  width: 56px;
+  height: 78px;
+  border-radius: 8px;
   background: var(--ivory);
   color: var(--ink);
   display: flex;
   flex-direction: column;
   justify-content: space-between;
-  padding: 4px;
+  padding: 5px;
   font-family: var(--font-body);
   font-weight: 800;
-  font-size: 0.78rem;
+  font-size: 0.95rem;
   box-shadow: 0 3px 8px var(--shadow);
   position: relative;
   user-select: none;
@@ -415,11 +415,8 @@ button.secondary {
 .pcard.suit-ouros { color: var(--suit-ouros); }
 .pcard.suit-paus { color: var(--suit-paus); }
 .pcard .rank-top { text-align: left; line-height: 1; }
-.pcard .suit-icon { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); font-size: 1.3rem; }
-/* Coin bas affiché à l'endroit (pas de rotation 180deg comme sur une carte
-   physique) : toutes les cartes sont face à moi sur mon propre écran, la
-   lecture "tête-bêche" pensée pour un adversaire en face n'a pas de sens ici. */
-.pcard .rank-bottom { text-align: right; line-height: 1; }
+.pcard .suit-icon { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); font-size: 1.6rem; }
+.pcard .rank-bottom { text-align: right; transform: rotate(180deg); line-height: 1; }
 .pcard.placeholder { background: rgba(245,239,224,0.08); box-shadow: none; }
 
 /* Icônes SVG des enseignes (remplacent les symboles ♠♥♦♣) */
@@ -459,6 +456,31 @@ button.secondary {
   gap: 0;
   -webkit-overflow-scrolling: touch;
 }
+/* Taille des cartes de la main : fluide plutôt que fixe, pour ne jamais
+   nécessiter de défilement horizontal avec 10 cartes, qu'on soit sur un
+   petit téléphone (390px) ou un écran large (le conteneur de jeu est de
+   toute façon plafonné à 480px de large par .screen, donc au-delà de ce
+   point les cartes se stabilisent naturellement à leur taille max). La
+   formule dérive directement de la largeur disponible (voir --card-w) pour
+   que la rangée de 10 cartes, chevauchement inclus (-13px par carte),
+   tienne exactement dans l'espace : 10*W - 9*13 <= largeur disponible.
+   38px/56px sont des bornes de sécurité (tout petit téléphone / grand
+   écran), pas les valeurs visées en pratique. Portée sur .my-hand-wrap (pas
+   juste .my-hand) pour couvrir aussi la carte "just-drawn-ghost" flottante
+   au-dessus de la main, qui doit rester à la même taille pour ne pas sauter
+   visuellement en s'y intégrant. */
+.my-hand-wrap .pcard {
+  --card-w: clamp(38px, calc((min(100vw, 480px) + 77px) / 10), 56px);
+  width: var(--card-w);
+  /* Le .pcard de base fixe déjà height:78px explicitement ; aspect-ratio ne
+     recalcule pas une dimension déjà définie, donc la hauteur doit être
+     recalculée explicitement ici plutôt que déléguée à aspect-ratio. */
+  height: calc(var(--card-w) * 78 / 56);
+  padding: calc(var(--card-w) * 0.0893);
+  border-radius: calc(var(--card-w) * 0.1429);
+  font-size: calc(var(--card-w) * 0.2714);
+}
+.my-hand-wrap .pcard .suit-icon { font-size: calc(var(--card-w) * 0.4571); }
 .my-hand .pcard {
   cursor: pointer;
   transition: transform 0.15s ease, box-shadow 0.15s ease;
