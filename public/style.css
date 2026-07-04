@@ -393,18 +393,18 @@ button.secondary {
 
 /* Playing card */
 .pcard {
-  width: 56px;
-  height: 78px;
-  border-radius: 8px;
+  width: 44px;
+  height: 61px;
+  border-radius: 7px;
   background: var(--ivory);
   color: var(--ink);
   display: flex;
   flex-direction: column;
   justify-content: space-between;
-  padding: 5px;
+  padding: 4px;
   font-family: var(--font-body);
   font-weight: 800;
-  font-size: 0.95rem;
+  font-size: 0.78rem;
   box-shadow: 0 3px 8px var(--shadow);
   position: relative;
   user-select: none;
@@ -415,8 +415,11 @@ button.secondary {
 .pcard.suit-ouros { color: var(--suit-ouros); }
 .pcard.suit-paus { color: var(--suit-paus); }
 .pcard .rank-top { text-align: left; line-height: 1; }
-.pcard .suit-icon { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); font-size: 1.6rem; }
-.pcard .rank-bottom { text-align: right; transform: rotate(180deg); line-height: 1; }
+.pcard .suit-icon { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); font-size: 1.3rem; }
+/* Coin bas affiché à l'endroit (pas de rotation 180deg comme sur une carte
+   physique) : toutes les cartes sont face à moi sur mon propre écran, la
+   lecture "tête-bêche" pensée pour un adversaire en face n'a pas de sens ici. */
+.pcard .rank-bottom { text-align: right; line-height: 1; }
 .pcard.placeholder { background: rgba(245,239,224,0.08); box-shadow: none; }
 
 /* Icônes SVG des enseignes (remplacent les symboles ♠♥♦♣) */
@@ -459,7 +462,7 @@ button.secondary {
 .my-hand .pcard {
   cursor: pointer;
   transition: transform 0.15s ease, box-shadow 0.15s ease;
-  margin-left: -18px;
+  margin-left: -13px;
 }
 .my-hand .pcard:first-child { margin-left: 0; }
 .my-hand .pcard.playable:active { transform: translateY(-10px); }
