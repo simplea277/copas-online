@@ -461,16 +461,21 @@ button.secondary {
    petit téléphone (390px) ou un écran large (le conteneur de jeu est de
    toute façon plafonné à 480px de large par .screen, donc au-delà de ce
    point les cartes se stabilisent naturellement à leur taille max). La
-   formule dérive directement de la largeur disponible (voir --card-w) pour
-   que la rangée de 10 cartes, chevauchement inclus (-13px par carte),
-   tienne exactement dans l'espace : 10*W - 9*13 <= largeur disponible.
-   38px/56px sont des bornes de sécurité (tout petit téléphone / grand
-   écran), pas les valeurs visées en pratique. Portée sur .my-hand-wrap (pas
-   juste .my-hand) pour couvrir aussi la carte "just-drawn-ghost" flottante
-   au-dessus de la main, qui doit rester à la même taille pour ne pas sauter
-   visuellement en s'y intégrant. */
+   formule dérive de la largeur disponible (voir --card-w) pour que la
+   rangée de 10 cartes, chevauchement inclus (-13px par carte), tienne dans
+   l'espace : 10*W - 9*13 <= largeur disponible. Une marge de sécurité de
+   ~8px est retranchée en plus (le "-8" dans le calc) : un calcul pile-poil
+   ajusté au pixel près se fait piéger par le moindre arrondi sous-pixel
+   (zoom navigateur, mise à l'échelle d'affichage Windows, etc.), ce qui a
+   déjà provoqué un défilement sur desktop malgré une vérification en
+   automatisé qui ne montrait aucun dépassement. 38px/55px sont des bornes
+   de sécurité (tout petit téléphone / grand écran), pas les valeurs visées
+   en pratique. Portée sur .my-hand-wrap (pas juste .my-hand) pour couvrir
+   aussi la carte "just-drawn-ghost" flottante au-dessus de la main, qui
+   doit rester à la même taille pour ne pas sauter visuellement en s'y
+   intégrant. */
 .my-hand-wrap .pcard {
-  --card-w: clamp(38px, calc((min(100vw, 480px) + 77px) / 10), 56px);
+  --card-w: clamp(38px, calc((min(100vw, 480px) + 77px - 8px) / 10), 55px);
   width: var(--card-w);
   /* Le .pcard de base fixe déjà height:78px explicitement ; aspect-ratio ne
      recalcule pas une dimension déjà définie, donc la hauteur doit être
