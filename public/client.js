@@ -90,7 +90,7 @@ const state = {
   // home | create | join | lobby | game | reconnecting
   screen: savedSession ? 'reconnecting' : 'home',
   name: '',
-  maxPlayersChoice: 4,
+  maxPlayersChoice: 3,
   room: null,           // dernier room:update reçu
   hand: null,           // dernier hand:update reçu
   myId: null,           // playerId stable (indépendant du socket.id courant)
@@ -511,6 +511,7 @@ function renderLobby() {
         ? `<button class="primary" id="btn-start" ${full ? '' : 'disabled'}>${full ? 'Démarrer la partie' : `En attente de ${room.maxPlayers - room.players.length} joueur(s)…`}</button>`
         : `<p class="lede">En attente que l'hôte démarre la partie…</p>`
       }
+      <button class="secondary" id="btn-leave-lobby">Quitter</button>
     </div>`;
 
   if (isHost && full) {
@@ -520,6 +521,8 @@ function renderLobby() {
       });
     };
   }
+
+  document.getElementById('btn-leave-lobby').onclick = () => leaveGame();
 }
 
 // Widget fixe sur le côté droit de l'écran : une carte face cachée qu'on
