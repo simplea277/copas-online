@@ -93,6 +93,9 @@ const state = {
   // home | create | join | lobby | game | reconnecting
   screen: savedSession ? 'reconnecting' : 'home',
   name: '',
+  joinCode: '', // valeur de l'écran "Rejoindre" ; conservée en state (pas juste lue au submit)
+                // car cliquer une suggestion de pseudo redéclenche un render() complet, qui
+                // aurait sinon vidé ce champ faute de value= reflétant l'état.
   maxPlayersChoice: 3,
   room: null,           // dernier room:update reçu
   hand: null,           // dernier hand:update reçu
@@ -486,6 +489,28 @@ function renderCard(card, extraClass = '', extraStyle = '') {
   </div>`;
 }
 
+// Pseudos suggérés sur les écrans "Créer"/"Rejoindre" : boutons rapides en
+// plus du champ libre, pour éviter à un groupe d'amis habitué de retaper son
+// prénom à chaque partie.
+const SUGGESTED_NAMES = ['Alan', 'Romane', 'Mika', 'Capu', 'Sergio'];
+
+function renderNameSuggestions() {
+  return `<div class="choice-row name-suggestions">
+    ${SUGGESTED_NAMES.map((n) => `<button type="button" class="choice-btn ${state.name === n ? 'active' : ''}" data-name="${n}">${n}</button>`).join('')}
+  </div>`;
+}
+
+function wireNameSuggestions() {
+  // [data-name] (pas juste .choice-btn) pour ne pas être aussi capté par le
+  // câblage des boutons "3/4 joueurs" (mêmes classes, data-n à la place).
+  document.querySelectorAll('.choice-btn[data-name]').forEach((b) => {
+    b.onclick = () => {
+      state.name = b.dataset.name;
+      render();
+    };
+  });
+}
+
 function playerName(id) {
   if (!state.room) return '?';
   const p = state.room.players.find((p) => p.id === id);
@@ -536,6 +561,7 @@ function renderCreate() {
       <div class="card-panel">
         <label>Ton prénom</label>
         <input type="text" id="name-input" placeholder="Ex : Léa" value="${state.name}" maxlength="16" />
+        ${renderNameSuggestions()}
         <label>Nombre de joueurs</label>
         <div class="choice-row">
           <button class="choice-btn ${state.maxPlayersChoice === 3 ? 'active' : ''}" data-n="3">3 joueurs</button>
@@ -546,7 +572,10 @@ function renderCreate() {
       </div>
     </div>`;
   document.getElementById('name-input').oninput = (e) => (state.name = e.target.value);
-  document.querySelectorAll('.choice-btn').forEach((b) => {
+  wireNameSuggestions();
+  // [data-n] (pas juste .choice-btn) pour ne pas être aussi capté par le
+  // câblage des suggestions de pseudo (mêmes classes, data-name à la place).
+  document.querySelectorAll('.choice-btn[data-n]').forEach((b) => {
     b.onclick = () => { state.maxPlayersChoice = Number(b.dataset.n); render(); };
   });
   document.getElementById('btn-back').onclick = () => { state.screen = 'home'; render(); };
@@ -572,13 +601,16 @@ function renderJoin() {
       <div class="card-panel">
         <label>Ton prénom</label>
         <input type="text" id="name-input" placeholder="Ex : Léa" value="${state.name}" maxlength="16" />
+        ${renderNameSuggestions()}
         <label>Code du salon</label>
-        <input type="text" id="code-input" class="code-input" placeholder="XXXX" maxlength="4" />
+        <input type="text" id="code-input" class="code-input" placeholder="XXXX" maxlength="4" value="${state.joinCode}" />
         <button class="primary" id="btn-submit">Rejoindre</button>
         <button class="secondary" id="btn-back">Retour</button>
       </div>
     </div>`;
   document.getElementById('name-input').oninput = (e) => (state.name = e.target.value);
+  document.getElementById('code-input').oninput = (e) => (state.joinCode = e.target.value);
+  wireNameSuggestions();
   document.getElementById('btn-back').onclick = () => { state.screen = 'home'; render(); };
   document.getElementById('btn-submit').onclick = () => {
     const code = document.getElementById('code-input').value.trim();

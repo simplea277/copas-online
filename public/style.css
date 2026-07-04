@@ -129,6 +129,14 @@ input[type="text"].code-input {
   color: var(--felt-dark);
 }
 
+/* Suggestions de pseudo (écrans Créer/Rejoindre) : contrairement aux boutons
+   "3/4 joueurs" (toujours 2, flex:1 pour se partager la largeur), le nombre
+   de suggestions peut être plus grand — on les laisse se dimensionner à leur
+   contenu et passer à la ligne plutôt que de les écraser sur une seule
+   rangée. */
+.choice-row.name-suggestions { flex-wrap: wrap; margin-bottom: 10px; }
+.name-suggestions .choice-btn { flex: 0 1 auto; padding: 8px 14px; }
+
 button.primary {
   width: 100%;
   padding: 14px;
