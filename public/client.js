@@ -77,6 +77,8 @@ function leaveGame() {
   state.screen = 'home';
   state.dealAnim = null;
   state.drawAnim = null;
+  state.pileCountOverride = null;
+  state.pendingDrawAnimId = null;
   state.justDrawnCard = null;
   state.justDrawnCardId = null;
   state.justDrawnStage = null;
@@ -101,7 +103,18 @@ const state = {
   handOverInfo: null,   // payload de game:handOver, tant que l'overlay est affiché
   joining: false,
   dealAnim: null,       // { id, phase: 'cards'|'pile', phaseStarted, sequence } tant que l'animation de distribution joue
-  drawAnim: null,       // { id, order, phaseStarted, pileCountBeforeDraw } tant que l'animation de pioche (fin de pli 1-3) joue
+  drawAnim: null,       // { id, order, phaseStarted } tant que l'animation de pioche (fin de pli 1-3) joue
+  pileCountOverride: null, // nombre de cartes affiché sur la pioche pendant la séquence
+                           // trickResolved -> distribution (fige puis décompte carte par carte
+                           // au lieu de refléter hand.drawPileCount, déjà décrémenté par le serveur
+                           // dès la réception de hand:update) ; null = affiche l'état réel.
+  pendingDrawAnimId: null, // id de la séquence de pioche qui possède actuellement
+                           // pileCountOverride, posé dès game:trickResolved (avant même que
+                           // startDrawAnim ne tourne, 1400ms plus tard). Si un pli s'enchaîne plus
+                           // vite que la séquence précédente (~2,6s), la séquence précédente s'y
+                           // compare à chaque étape et s'arrête proprement dès qu'elle ne
+                           // correspond plus, au lieu de continuer à décrémenter le compte qui
+                           // appartient déjà à la séquence suivante.
   justDrawnCard: null,  // carte que je viens de piocher (contenu réel, seulement chez moi)
   justDrawnCardId: null, // cardId() de justDrawnCard, pour la retrouver/comparer
   justDrawnStage: null, // 'ghost' (au-dessus de la main) -> 'settle' (dans la main, mise en évidence) -> null
@@ -270,15 +283,30 @@ function finishDealAnim(animId) {
 // ---------------------------------------------------------------------------
 
 // payload : { drawOrder: [playerId, ...] | null, myDrawnCard: card | null }
-function startDrawAnim(payload) {
+// seqId : id alloué dès game:trickResolved (voir pendingDrawAnimId) — réutilisé
+// ici plutôt que d'en générer un nouveau, pour qu'une séquence plus récente
+// (pli suivant déjà résolu avant que celle-ci n'ait eu la chance de démarrer)
+// soit détectable dès l'entrée dans cette fonction.
+function startDrawAnim(payload, seqId) {
   if (!payload || !payload.drawOrder || payload.drawOrder.length === 0) return;
-  if (prefersReducedMotion()) return; // l'état à jour (déjà en main) suffit, pas d'animation
+  if (seqId == null || state.pendingDrawAnimId !== seqId) {
+    // Remplacée par un pli suivant avant même d'avoir démarré : rien à
+    // rejouer, pileCountOverride appartient déjà à la séquence plus récente.
+    return;
+  }
+  if (prefersReducedMotion()) {
+    // Pas d'animation : l'état à jour suffit, mais il ne faut pas laisser le
+    // compteur de pioche figé sur sa valeur d'avant-tirage (state.pileCountOverride,
+    // posée dès game:trickResolved) puisque la séquence qui le décrémente et
+    // le relâche ne va jamais tourner.
+    state.pileCountOverride = null;
+    state.pendingDrawAnimId = null;
+    render();
+    return;
+  }
 
-  dealAnimCounter += 1;
-  const animId = dealAnimCounter;
-  const hand = state.hand;
-  const pileCountBeforeDraw = (hand?.drawPileCount ?? 0) + payload.drawOrder.length;
-  state.drawAnim = { id: animId, order: payload.drawOrder, phaseStarted: false, pileCountBeforeDraw };
+  const animId = seqId;
+  state.drawAnim = { id: animId, order: payload.drawOrder, phaseStarted: false };
 
   if (payload.myDrawnCard) {
     const drawnId = cardId(payload.myDrawnCard);
@@ -310,18 +338,22 @@ function runDrawAnimPhase(animId) {
   const drawAnim = state.drawAnim;
   const layer = document.getElementById('deal-anim-layer');
   const pileEl = document.querySelector('[data-anchor="draw-pile"]');
-  if (!drawAnim || drawAnim.id !== animId || !layer || !pileEl) { finishDrawAnim(animId); return; }
+  if (!drawAnim || drawAnim.id !== animId || state.pendingDrawAnimId !== animId || !layer || !pileEl) { finishDrawAnim(animId); return; }
 
   const pileRect = pileEl.getBoundingClientRect();
   const startX = pileRect.left + pileRect.width / 2 - 13;
   const startY = pileRect.top + pileRect.height / 2 - 18;
 
   const STAGGER = 180;
-  const FLIGHT = 320;
+  const FLIGHT = 512; // x1.6 par rapport à l'ancien 320ms, pour un trajet plus lisible
 
   drawAnim.order.forEach((pid, i) => {
     setTimeout(() => {
-      if (!state.drawAnim || state.drawAnim.id !== animId) return;
+      // pendingDrawAnimId peut avoir été réassigné à un pli plus récent
+      // depuis la programmation de ce setTimeout (voir game:trickResolved) :
+      // s'arrêter proprement plutôt que de continuer à décrémenter/faire
+      // voler des cartes pour une séquence qui n'est plus d'actualité.
+      if (!state.drawAnim || state.drawAnim.id !== animId || state.pendingDrawAnimId !== animId) return;
       const targetEl = document.querySelector(`[data-anchor="player-${pid}"]`);
       const currentLayer = document.getElementById('deal-anim-layer');
       if (!targetEl || !currentLayer) return;
@@ -340,12 +372,27 @@ function runDrawAnimPhase(animId) {
       card.style.opacity = '0';
 
       setTimeout(() => card.remove(), FLIGHT + 60);
+
+      // Décompte du tas carte par carte, en phase avec le départ de chaque
+      // carte (pas d'un coup à la fin). Mise à jour DOM directe plutôt qu'un
+      // render() complet : un render() recrée #deal-anim-layer depuis zéro et
+      // détruirait les cartes déjà en vol (ajoutées ici hors du cycle de
+      // rendu). Le tas ne disparaît lui-même que plus tard, via le render()
+      // final de finishDrawAnim, une fois toute la séquence (y compris le vol
+      // de cette dernière carte) terminée.
+      if (state.pileCountOverride != null) {
+        state.pileCountOverride = Math.max(0, state.pileCountOverride - 1);
+        const countEl = document.querySelector('.draw-pile-count');
+        if (countEl) countEl.textContent = String(state.pileCountOverride);
+      }
     }, i * STAGGER);
   });
 
   const total = drawAnim.order.length * STAGGER + FLIGHT + 150;
   setTimeout(() => {
-    if (!state.drawAnim || state.drawAnim.id !== animId) return;
+    if (!state.drawAnim || state.drawAnim.id !== animId || state.pendingDrawAnimId !== animId) return;
+    state.pileCountOverride = null;
+    state.pendingDrawAnimId = null;
     finishDrawAnim(animId);
   }, total);
 }
@@ -595,11 +642,13 @@ function renderGame() {
   // centre, avec le nombre de cartes restantes. Caché tant que la phase
   // "cards" de la distribution tourne encore (elle n'apparaît qu'une fois
   // que le donneur a fini de se servir), et disparaît proprement une fois
-  // épuisée (drawPileCount === 0). Pendant l'animation de pioche d'un pli,
-  // affiche encore le compte d'avant le tirage (les cartes "quittent" la
-  // pioche visuellement avant que son compte ne baisse).
+  // épuisée (drawPileCount === 0). pileCountOverride fige puis décompte
+  // l'affichage carte par carte pendant toute la séquence trickResolved ->
+  // distribution (voir game:trickResolved et runDrawAnimPhase) : sans ça, le
+  // hand:update qui suit la résolution du pli arrive avec le compte déjà
+  // décrémenté côté serveur et ferait sauter l'affichage avant l'animation.
   const cardsPhaseActive = !!(state.dealAnim && state.dealAnim.phase === 'cards');
-  const displayedPileCount = state.drawAnim ? state.drawAnim.pileCountBeforeDraw : hand.drawPileCount;
+  const displayedPileCount = state.pileCountOverride != null ? state.pileCountOverride : hand.drawPileCount;
   const showDrawPile = hand.numPlayers === 3 && displayedPileCount > 0 && !cardsPhaseActive;
   const drawPileHtml = showDrawPile
     ? `<div class="draw-pile" data-anchor="draw-pile" title="Pioche">
@@ -840,6 +889,8 @@ socket.on('hand:update', (hand) => {
     // Nouvelle manche : toute animation/mise en évidence de pioche de la
     // manche précédente n'a plus lieu d'être.
     state.drawAnim = null;
+    state.pileCountOverride = null;
+    state.pendingDrawAnimId = null;
     state.justDrawnCard = null;
     state.justDrawnCardId = null;
     state.justDrawnStage = null;
@@ -851,6 +902,31 @@ socket.on('hand:update', (hand) => {
 
 socket.on('game:trickResolved', (payload) => {
   if (state.screen === 'home') return;
+
+  // Capturé ICI, avant tout autre traitement : hand:update (qui suit tout de
+  // suite, le serveur l'émettant juste après) arrive avec drawPileCount déjà
+  // décrémenté par le tirage de ce pli. Si on ne fige pas l'affichage tout de
+  // suite avec la valeur actuelle (encore correcte à ce stade précis), le
+  // compteur/tas sauterait à sa valeur finale dès l'arrivée de hand:update,
+  // bien avant que la séquence d'animation ne joue et ne le décrémente elle-
+  // même carte par carte.
+  //
+  // pendingDrawAnimId est posé dès maintenant (pas seulement quand
+  // startDrawAnim tourne, 1400ms plus tard) : si les joueurs enchaînent les
+  // plis plus vite que la durée d'une séquence complète (~2,6s, arrive vite
+  // avec des bots ou des joueurs rapides), un pli suivant peut se résoudre
+  // avant que celui-ci n'ait fini d'animer. En réassignant l'id ici, tout de
+  // suite, la séquence précédente (dont les setTimeout tournent encore) le
+  // détecte au prochain tick et s'arrête proprement au lieu de continuer à
+  // décrémenter un compteur qui ne lui appartient plus.
+  let myDrawSeqId = null;
+  if (payload?.drawOrder?.length && state.hand) {
+    dealAnimCounter += 1;
+    myDrawSeqId = dealAnimCounter;
+    state.pendingDrawAnimId = myDrawSeqId;
+    state.pileCountOverride = state.hand.drawPileCount;
+  }
+
   state.trickResult = payload;
   state.lastTrick = payload; // consultable via le widget une fois l'animation terminée
   state.lastTrickRevealed = false; // nouveau pli = widget refermé, à retourner à nouveau pour le voir
@@ -859,7 +935,7 @@ socket.on('game:trickResolved', (payload) => {
     state.trickResult = null;
     // Fin des 3 premiers plis (3 joueurs) : si des cartes ont été piochées,
     // rejoue une petite distribution depuis la pioche vers chaque joueur.
-    startDrawAnim(payload);
+    startDrawAnim(payload, myDrawSeqId);
     render();
   }, 1400);
 });
@@ -870,6 +946,8 @@ socket.on('game:handOver', (payload) => {
   state.lastTrick = null; // la manche suivante repart sans "dernier pli" de la précédente
   state.lastTrickRevealed = false;
   state.drawAnim = null;
+  state.pileCountOverride = null;
+  state.pendingDrawAnimId = null;
   state.justDrawnCard = null;
   state.justDrawnCardId = null;
   state.justDrawnStage = null;
