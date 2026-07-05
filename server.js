@@ -9,6 +9,7 @@ const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
 const engine = require('./game/engine');
+const botAI = require('./game/botAI');
 
 const app = express();
 const server = http.createServer(app);
@@ -32,6 +33,30 @@ const PORT = process.env.PORT || 3000;
 // ----------------------------------------------------------------------------
 const rooms = {};
 
+// Bots : des joueurs comme les autres dans room.players (isBot: true), sans
+// socket réel (socketId/sessionToken null) — jamais de destinataire pour un
+// emit direct, jamais de session à reprendre. Noms à thème (rangs des
+// cartes), pour rester clairement distincts des pseudos suggérés côté client
+// (Alan, Romane, Mika, Capu).
+const BOT_NAMES = ['Bot Rei', 'Bot Dama', 'Bot Valete', 'Bot Ás'];
+let botCounter = 0;
+
+function makeBot() {
+  botCounter += 1;
+  return {
+    playerId: `bot-${botCounter}`,
+    socketId: null,
+    sessionToken: null,
+    name: BOT_NAMES[(botCounter - 1) % BOT_NAMES.length],
+    connected: true,
+    isBot: true,
+  };
+}
+
+function hasAnyHuman(room) {
+  return room.players.some((p) => !p.isBot);
+}
+
 function makeRoomCode() {
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // sans caractères ambigus
   let code;
@@ -44,7 +69,7 @@ function makeRoomCode() {
 function publicRoomState(room) {
   return {
     code: room.code,
-    players: room.players.map((p) => ({ id: p.playerId, name: p.name, connected: p.connected })),
+    players: room.players.map((p) => ({ id: p.playerId, name: p.name, connected: p.connected, isBot: !!p.isBot })),
     maxPlayers: room.maxPlayers,
     started: room.started,
     scores: room.scores || null,
@@ -81,7 +106,7 @@ function broadcastHandState(room) {
   // qu'on vient d'envoyer via game:handOver.
   if (!room.currentHand) return;
   for (const p of room.players) {
-    if (!p.connected) continue;
+    if (p.isBot || !p.connected) continue;
     io.to(p.socketId).emit('hand:update', handViewForPlayer(room, p.playerId));
   }
 }
@@ -97,6 +122,96 @@ function startNewHand(room) {
 
 function nextDealer(room) {
   room.dealerIndex = (room.dealerIndex + 1) % room.players.length;
+}
+
+function isBotTurn(room) {
+  if (!room.currentHand || room.currentHand.finished) return false;
+  const currentId = room.currentHand.players[room.currentHand.turnIndex];
+  const player = room.players.find((p) => p.playerId === currentId);
+  return !!player?.isBot;
+}
+
+// Programme le coup automatique d'un bot après un court délai (pour ne pas
+// paraître instantané/robotique à l'écran), et rejoue la même vérification
+// juste avant d'agir : le salon peut avoir disparu (tout le monde parti) ou
+// la manche avoir changé entre-temps (un humain a peut-être déjà rejoué,
+// improbable mais pas impossible selon l'ordre d'arrivée des événements).
+// Chaîne naturellement d'un bot au suivant : handleCardPlay rappelle cette
+// fonction après chaque coup, humain ou bot.
+function scheduleBotTurnIfNeeded(room) {
+  if (!isBotTurn(room)) return;
+  const delay = 700 + Math.floor(Math.random() * 800); // 700-1500ms
+  setTimeout(() => {
+    try {
+      const currentRoom = rooms[room.code];
+      if (!currentRoom || currentRoom !== room || !isBotTurn(currentRoom)) return;
+
+      const botId = currentRoom.currentHand.players[currentRoom.currentHand.turnIndex];
+      const card = botAI.chooseBotCard(currentRoom.currentHand, botId);
+      handleCardPlay(currentRoom, botId, card);
+    } catch (err) {
+      console.error('[bot] erreur inattendue:', err);
+    }
+  }, delay);
+}
+
+/**
+ * Applique un coup (humain ou bot) et gère toutes les conséquences réseau
+ * (résolution de pli, fin de manche/partie, coup automatique du bot suivant
+ * si besoin). Factorisé pour être appelé aussi bien depuis le handler
+ * socket game:playCard que depuis scheduleBotTurnIfNeeded.
+ */
+function handleCardPlay(room, playerId, card) {
+  const result = engine.playCard(room.currentHand, playerId, card);
+  if (!result.ok) return result;
+
+  if (result.trickComplete) {
+    // Émis par joueur (pas de broadcast room-wide) : le contenu réel d'une
+    // carte piochée ne doit être visible que par celui qui l'a piochée.
+    // Les autres joueurs reçoivent seulement l'ordre des tirages (qui a
+    // pioché, dans quel ordre) pour rejouer l'animation, sans le contenu.
+    const drawOrder = result.drawnCards ? Object.keys(result.drawnCards) : null;
+    for (const p of room.players) {
+      if (p.isBot || !p.connected) continue;
+      io.to(p.socketId).emit('game:trickResolved', {
+        trick: result.trick,
+        winnerId: result.winnerId,
+        copasInTrick: result.copasInTrick,
+        drawOrder,
+        myDrawnCard: result.drawnCards ? (result.drawnCards[p.playerId] || null) : null,
+      });
+    }
+  }
+
+  if (result.handOver) {
+    const log = engine.applyHandResultToScores(
+      room.scores,
+      room.currentHand.tricksWonCopas,
+      room.players.map((p) => p.playerId)
+    );
+    const gameOverLosers = engine.checkGameOver(room.scores);
+
+    io.to(room.code).emit('game:handOver', {
+      tricksWonCopas: room.currentHand.tricksWonCopas,
+      scoringLog: log,
+      scores: room.scores,
+      gameOver: gameOverLosers,
+      earlyEnd: !!result.earlyEnd,
+    });
+
+    if (gameOverLosers) {
+      room.started = false;
+      room.currentHand = null;
+    } else {
+      nextDealer(room);
+      startNewHand(room);
+    }
+    broadcastRoomState(room);
+  }
+
+  broadcastHandState(room);
+  scheduleBotTurnIfNeeded(room);
+  return result;
 }
 
 function isValidCard(card) {
@@ -196,6 +311,25 @@ io.on('connection', (socket) => {
     broadcastRoomState(room);
   }));
 
+  // Complète les places vides du salon avec des bots (host uniquement, avant
+  // le début de la partie). Utilisé aussi bien pour "compléter avec des
+  // bots" depuis le lobby que pour le mode solo (créer + compléter + démarrer
+  // enchaînés côté client).
+  socket.on('room:fillBots', withErrorHandling('room:fillBots', (_, callback) => {
+    const room = rooms[socket.data.roomCode];
+    if (!room) return callback?.({ ok: false, error: 'Salon introuvable.' });
+    if (room.started) return callback?.({ ok: false, error: 'La partie a déjà commencé.' });
+    const isHost = room.players[0]?.playerId === socket.data.playerId;
+    if (!isHost) return callback?.({ ok: false, error: "Seul l'hôte peut ajouter des bots." });
+
+    while (room.players.length < room.maxPlayers) {
+      room.players.push(makeBot());
+    }
+
+    callback?.({ ok: true, room: publicRoomState(room) });
+    broadcastRoomState(room);
+  }));
+
   // Permet à un joueur de retrouver son siège (main, score, place dans le
   // salon) après un rafraîchissement de page ou une coupure réseau, tant que
   // le salon existe encore côté serveur.
@@ -242,7 +376,7 @@ io.on('connection', (socket) => {
     socket.data.roomCode = null;
     socket.data.playerId = null;
 
-    if (room.players.length === 0) {
+    if (!hasAnyHuman(room)) {
       delete rooms[room.code];
     } else {
       broadcastRoomState(room);
@@ -267,6 +401,7 @@ io.on('connection', (socket) => {
     callback?.({ ok: true });
     broadcastRoomState(room);
     broadcastHandState(room);
+    scheduleBotTurnIfNeeded(room); // le premier joueur à jouer peut déjà être un bot
   }));
 
   socket.on('game:playCard', withErrorHandling('game:playCard', (payload, callback) => {
@@ -278,56 +413,8 @@ io.on('connection', (socket) => {
       return callback?.({ ok: false, error: 'Carte invalide.' });
     }
 
-    const result = engine.playCard(room.currentHand, socket.data.playerId, card);
-    if (!result.ok) return callback?.({ ok: false, error: result.error });
-
-    callback?.({ ok: true });
-
-    if (result.trickComplete) {
-      // Émis par joueur (pas de broadcast room-wide) : le contenu réel d'une
-      // carte piochée ne doit être visible que par celui qui l'a piochée.
-      // Les autres joueurs reçoivent seulement l'ordre des tirages (qui a
-      // pioché, dans quel ordre) pour rejouer l'animation, sans le contenu.
-      const drawOrder = result.drawnCards ? Object.keys(result.drawnCards) : null;
-      for (const p of room.players) {
-        if (!p.connected) continue;
-        io.to(p.socketId).emit('game:trickResolved', {
-          trick: result.trick,
-          winnerId: result.winnerId,
-          copasInTrick: result.copasInTrick,
-          drawOrder,
-          myDrawnCard: result.drawnCards ? (result.drawnCards[p.playerId] || null) : null,
-        });
-      }
-    }
-
-    if (result.handOver) {
-      const log = engine.applyHandResultToScores(
-        room.scores,
-        room.currentHand.tricksWonCopas,
-        room.players.map((p) => p.playerId)
-      );
-      const gameOverLosers = engine.checkGameOver(room.scores);
-
-      io.to(room.code).emit('game:handOver', {
-        tricksWonCopas: room.currentHand.tricksWonCopas,
-        scoringLog: log,
-        scores: room.scores,
-        gameOver: gameOverLosers,
-        earlyEnd: !!result.earlyEnd,
-      });
-
-      if (gameOverLosers) {
-        room.started = false;
-        room.currentHand = null;
-      } else {
-        nextDealer(room);
-        startNewHand(room);
-      }
-      broadcastRoomState(room);
-    }
-
-    broadcastHandState(room);
+    const result = handleCardPlay(room, socket.data.playerId, card);
+    callback?.(result.ok ? { ok: true } : { ok: false, error: result.error });
   }));
 
   socket.on('disconnect', withErrorHandling('disconnect', () => {
@@ -338,7 +425,7 @@ io.on('connection', (socket) => {
     broadcastRoomState(room);
 
     setTimeout(() => {
-      const stillHere = room.players.some((p) => p.connected);
+      const stillHere = room.players.some((p) => !p.isBot && p.connected);
       if (!stillHere) delete rooms[room.code];
     }, 5 * 60 * 1000);
   }));

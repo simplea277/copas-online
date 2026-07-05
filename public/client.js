@@ -85,6 +85,7 @@ function leaveGame() {
   state.justDrawnStageStartedAt = null;
   state.trickPileCount = 0;
   state.rulesOpen = false;
+  state.soloStarting = false;
   render();
 }
 
@@ -98,6 +99,7 @@ const state = {
                 // car cliquer une suggestion de pseudo redéclenche un render() complet, qui
                 // aurait sinon vidé ce champ faute de value= reflétant l'état.
   maxPlayersChoice: 3,
+  soloStarting: false, // true pendant l'enchaînement room:create -> room:fillBots -> room:start du mode solo
   rulesOpen: false,   // overlay "Règles du jeu" affiché ou non ; superposé au reste, ne
                       // touche à aucun autre état (la partie continue derrière normalement)
   rulesTab: 3,        // 3 ou 4 : version affichée depuis l'accueil (où les deux sont
@@ -694,11 +696,23 @@ function playerName(id) {
   return p ? p.name : '?';
 }
 
+function isBotPlayer(id) {
+  if (!state.room) return false;
+  return !!state.room.players.find((p) => p.id === id)?.isBot;
+}
+
+// Badge discret pour distinguer un bot d'un vrai joueur, dans le lobby comme
+// en jeu (opponent chips, score chips).
+function botBadge() {
+  return `<span class="bot-badge" title="Bot">🤖</span>`;
+}
+
 function render() {
   if (state.screen === 'reconnecting') return renderReconnecting();
   if (state.screen === 'home') return renderHome();
   if (state.screen === 'create') return renderCreate();
   if (state.screen === 'join') return renderJoin();
+  if (state.screen === 'solo') return renderSolo();
   if (state.screen === 'lobby') return renderLobby();
   if (state.screen === 'game') return renderGame();
 }
@@ -724,12 +738,15 @@ function renderHome() {
         <button class="primary" id="btn-create">Créer une partie</button>
         <div class="divider">ou</div>
         <button class="secondary" id="btn-join">Rejoindre avec un code</button>
+        <div class="divider">ou</div>
+        <button class="secondary" id="btn-solo">Jouer contre l'ordinateur</button>
       </div>
       <button class="link-btn" id="btn-rules">Règles du jeu</button>
     </div>
     ${renderRulesOverlay('home')}`;
   document.getElementById('btn-create').onclick = () => { state.error = null; state.screen = 'create'; render(); };
   document.getElementById('btn-join').onclick = () => { state.error = null; state.screen = 'join'; render(); };
+  document.getElementById('btn-solo').onclick = () => { state.error = null; state.screen = 'solo'; render(); };
   document.getElementById('btn-rules').onclick = () => { state.rulesOpen = true; render(); };
   wireRulesOverlay();
 }
@@ -809,6 +826,56 @@ function renderJoin() {
   };
 }
 
+// Mode solo : demande juste le nombre de joueurs (comme une création
+// classique), puis enchaîne room:create -> room:fillBots -> room:start côté
+// serveur sans code de salon ni attente. Le passage à l'écran de jeu se fait
+// ensuite normalement via les room:update/hand:update diffusés par le
+// serveur, exactement comme pour une partie classique une fois démarrée.
+function renderSolo() {
+  app.innerHTML = `
+    <div class="screen" style="justify-content:center;">
+      <h1>Jouer contre l'<span class="accent">ordinateur</span></h1>
+      ${errorBox()}
+      <div class="card-panel">
+        <label>Nombre de joueurs</label>
+        <div class="choice-row">
+          <button class="choice-btn ${state.maxPlayersChoice === 3 ? 'active' : ''}" data-n="3">3 joueurs</button>
+          <button class="choice-btn ${state.maxPlayersChoice === 4 ? 'active' : ''}" data-n="4">4 joueurs</button>
+        </div>
+        <button class="primary" id="btn-submit" ${state.soloStarting ? 'disabled' : ''}>${state.soloStarting ? 'Préparation…' : 'Commencer'}</button>
+        <button class="secondary" id="btn-back" ${state.soloStarting ? 'disabled' : ''}>Retour</button>
+      </div>
+    </div>`;
+  document.querySelectorAll('.choice-btn[data-n]').forEach((b) => {
+    b.onclick = () => { state.maxPlayersChoice = Number(b.dataset.n); render(); };
+  });
+  document.getElementById('btn-back').onclick = () => { state.screen = 'home'; render(); };
+  document.getElementById('btn-submit').onclick = () => {
+    state.error = null;
+    state.soloStarting = true;
+    render();
+
+    const soloName = state.name.trim() || 'Moi';
+    socket.emit('room:create', { name: soloName, maxPlayers: state.maxPlayersChoice }, (res) => {
+      if (!res.ok) { state.error = res.error; state.soloStarting = false; render(); return; }
+      state.myId = res.playerId;
+      state.room = res.room;
+      saveSession({ code: res.room.code, sessionToken: res.sessionToken });
+
+      socket.emit('room:fillBots', {}, (fillRes) => {
+        if (!fillRes.ok) { state.error = fillRes.error; state.soloStarting = false; state.screen = 'lobby'; render(); return; }
+
+        socket.emit('room:start', {}, (startRes) => {
+          state.soloStarting = false;
+          if (!startRes.ok) { state.error = startRes.error; state.screen = 'lobby'; render(); return; }
+          // room:update/hand:update déjà diffusés par le serveur à ce stade ;
+          // le prochain hand:update fera passer state.screen à 'game'.
+        });
+      });
+    });
+  };
+}
+
 function renderLobby() {
   const room = state.room;
   const isHost = room.players[0]?.id === state.myId;
@@ -818,7 +885,7 @@ function renderLobby() {
   for (let i = 0; i < room.maxPlayers; i++) {
     const p = room.players[i];
     if (p) {
-      playerItems.push(`<li><span class="player-dot ${p.connected ? '' : 'offline'}"></span>${p.name}${p.id === state.myId ? ' (toi)' : ''}</li>`);
+      playerItems.push(`<li><span class="player-dot ${p.connected ? '' : 'offline'}"></span>${p.name}${isBotPlayer(p.id) ? botBadge() : ''}${p.id === state.myId ? ' (toi)' : ''}</li>`);
     } else {
       playerItems.push(`<li class="empty">En attente d'un joueur…</li>`);
     }
@@ -840,12 +907,20 @@ function renderLobby() {
         ? `<button class="primary" id="btn-start" ${full ? '' : 'disabled'}>${full ? 'Démarrer la partie' : `En attente de ${room.maxPlayers - room.players.length} joueur(s)…`}</button>`
         : `<p class="lede">En attente que l'hôte démarre la partie…</p>`
       }
+      ${isHost && !full ? `<button class="secondary" id="btn-fill-bots">Compléter avec des bots</button>` : ''}
       <button class="secondary" id="btn-leave-lobby">Quitter</button>
     </div>`;
 
   if (isHost && full) {
     document.getElementById('btn-start').onclick = () => {
       socket.emit('room:start', {}, (res) => {
+        if (!res.ok) { state.error = res.error; render(); }
+      });
+    };
+  }
+  if (isHost && !full) {
+    document.getElementById('btn-fill-bots').onclick = () => {
+      socket.emit('room:fillBots', {}, (res) => {
         if (!res.ok) { state.error = res.error; render(); }
       });
     };
@@ -906,7 +981,7 @@ function renderGame() {
     const miniCards = Array.from({ length: Math.min(count, 10) }).map(() => `<div class="mc"></div>`).join('');
     return `<div class="opponent ${active ? 'active-turn' : ''}" data-anchor="player-${pid}">
       ${pid === dealerId ? dealerBadge : ''}
-      <div class="name">${playerName(pid)}</div>
+      <div class="name">${playerName(pid)}${isBotPlayer(pid) ? botBadge() : ''}</div>
       <div class="mini-cards">${miniCards}</div>
       <div class="cardcount">${count} cartes</div>
     </div>`;
@@ -955,7 +1030,7 @@ function renderGame() {
     return `<div class="score-chip ${pid === myId ? 'me' : ''}">
       ${pid === dealerId ? dealerBadge : ''}
       ${s.suspended > 0 ? `<div class="suspended-float">${s.suspended} en suspens</div>` : ''}
-      <div class="name">${playerName(pid)}</div>
+      <div class="name">${playerName(pid)}${isBotPlayer(pid) ? botBadge() : ''}</div>
       <div class="real">${s.real}</div>
     </div>`;
   }).join('');
@@ -1142,10 +1217,13 @@ socket.on('room:update', (room) => {
   state.room = room;
   if (room.started) {
     if (state.screen !== 'game') state.screen = 'game';
-  } else if (!state.handOverInfo) {
+  } else if (!state.handOverInfo && !state.soloStarting) {
     // Ne bascule vers le lobby que si on n'est pas en train d'afficher le
     // résultat final d'une partie qui vient de se terminer (room.started
-    // repasse à false à ce moment-là, mais l'overlay doit rester affiché).
+    // repasse à false à ce moment-là, mais l'overlay doit rester affiché),
+    // ni en train d'enchaîner room:create -> room:fillBots -> room:start du
+    // mode solo (room:update de l'étape fillBots arrive alors que started
+    // est encore false, ce qui basculerait sinon brièvement vers le lobby).
     state.screen = 'lobby';
   }
   render();

@@ -669,6 +669,14 @@ button.secondary {
   z-index: 2;
 }
 
+/* Badge bot — distingue un joueur automatique d'un vrai joueur, dans le
+   lobby comme en jeu (opponent chips, score chips). */
+.bot-badge {
+  font-size: 0.8em;
+  margin-left: 4px;
+  vertical-align: middle;
+}
+
 /* Distribution des cartes — ma main pas encore révélée : dos de carte en
    éventail à la place, le temps de l'animation d'envol. */
 .my-hand-pending .pcard.card-back { flex-shrink: 0; }
