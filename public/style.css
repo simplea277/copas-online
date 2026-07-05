@@ -279,9 +279,41 @@ button.secondary {
 .trick-slots {
   display: grid;
   grid-template-columns: repeat(3, 56px);
-  grid-auto-rows: 78px;
-  gap: 6px;
+  grid-auto-rows: auto; /* le nom au-dessus de chaque carte (.trick-slot) fait varier la hauteur */
+  gap: 10px 6px;
   justify-content: center;
+}
+/* Un emplacement du pli en cours : nom du joueur au-dessus de sa carte
+   (renderTrickSlot). Toujours présent (même vide, via &nbsp;) pour que
+   tous les emplacements gardent la même hauteur, joué ou non. */
+.trick-slot {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+}
+.trick-slot-name {
+  font-size: 0.62rem;
+  text-align: center;
+  color: var(--ivory-dim);
+  max-width: 56px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Carte jouée en train de voler depuis la position du joueur (opponent chip
+   ou ma main) jusqu'à son emplacement dans .trick-slots (voir
+   animateTrickCardArrival). Élément décoratif indépendant du cycle de
+   rendu, comme .deal-card/.trick-fly-card : positionné en fixed puis animé
+   via transform, jamais un obstacle aux clics (pointer-events:none hérité
+   de #deal-anim-layer). Volontairement plus lente que les vols de la
+   pioche/du tas (0.65s) : c'est la carte qu'on veut le plus clairement
+   suivre du regard, d'où elle vient jusqu'à sa place dans le pli. */
+.trick-arrive-card {
+  position: fixed;
+  transform: translate(0, 0);
+  transition: transform 0.65s cubic-bezier(.22,.85,.35,1);
 }
 
 /* Rangée pli + pioche (3 joueurs) côte à côte, pour ne jamais empiéter sur

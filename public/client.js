@@ -86,6 +86,7 @@ function leaveGame() {
   state.trickPileCount = 0;
   state.rulesOpen = false;
   state.soloStarting = false;
+  state.pendingTrickSlots = [];
   render();
 }
 
@@ -143,6 +144,10 @@ const state = {
                      // complétion tardive de l'animation d'envol du pli (voir
                      // runTrickPileAnim) de détecter qu'une nouvelle manche a démarré
                      // entre-temps et de ne pas faire grossir le tas déjà remis à zéro.
+  pendingTrickSlots: [], // [{ tricksPlayed, index }] emplacements du pli en cours dont la
+                         // carte est en vol (voir animateTrickCardArrival) : exclus de
+                         // l'affichage normal (montrés vides) jusqu'à l'arrivée, pour ne
+                         // jamais montrer la carte dans son emplacement avant l'animation.
 };
 
 let dealAnimCounter = 0;
@@ -503,6 +508,47 @@ function runTrickPileAnim(sourceRects, handGen) {
 
 function cardId(c) { return `${c.suit}-${c.rank}`; }
 
+// ---------------------------------------------------------------------------
+// Animation d'arrivée d'une carte jouée dans le pli en cours — qu'elle vienne
+// de ma main ou de celle d'un adversaire (data-anchor="player-X", posé aussi
+// bien sur .my-hand-wrap que sur chaque .opponent), elle vole visuellement
+// jusqu'à sa place dans .trick-slots plutôt que d'y apparaître
+// instantanément. targetSlotIndex désigne la position (0-based) dans
+// .trick-slots au moment de l'appel : on suppose qu'un emplacement (au moins
+// vide, voir renderTrickSlot) y existe déjà pour pouvoir mesurer sa position
+// d'arrivée exacte. onComplete est TOUJOURS appelé (même en cas d'échec de
+// mesure ou en prefers-reduced-motion), pour que l'appelant révèle la carte
+// dans tous les cas.
+function animateTrickCardArrival(entry, targetSlotIndex, onComplete) {
+  if (prefersReducedMotion()) { onComplete(); return; }
+
+  const layer = document.getElementById('deal-anim-layer');
+  const targetSlotEl = document.querySelectorAll('.trick-slots .trick-slot')[targetSlotIndex];
+  const sourceEl = document.querySelector(`[data-anchor="player-${entry.playerId}"]`);
+  if (!layer || !targetSlotEl || !sourceEl) { onComplete(); return; }
+
+  const sourceRect = sourceEl.getBoundingClientRect();
+  const targetRect = (targetSlotEl.querySelector('.pcard') || targetSlotEl).getBoundingClientRect();
+
+  const wrapper = document.createElement('div');
+  wrapper.innerHTML = renderCard(entry.card, 'trick-arrive-card');
+  const cardEl = wrapper.firstElementChild;
+  const startLeft = sourceRect.left + sourceRect.width / 2 - targetRect.width / 2;
+  const startTop = sourceRect.top + sourceRect.height / 2 - targetRect.height / 2;
+  cardEl.style.left = `${startLeft}px`;
+  cardEl.style.top = `${startTop}px`;
+  layer.appendChild(cardEl);
+  cardEl.getBoundingClientRect(); // force le layout avant de déclencher la transition
+
+  cardEl.style.transform = `translate(${targetRect.left - startLeft}px, ${targetRect.top - startTop}px)`;
+
+  const FLIGHT_MS = 650; // assez lent pour bien suivre d'où vient la carte, sans traîner
+  setTimeout(() => {
+    cardEl.remove();
+    onComplete();
+  }, FLIGHT_MS);
+}
+
 function renderCard(card, extraClass = '', extraStyle = '') {
   if (!card) return `<div class="pcard placeholder"></div>`;
   const sym = SUIT_SVG[card.suit];
@@ -513,6 +559,19 @@ function renderCard(card, extraClass = '', extraStyle = '') {
     <div class="suit-icon">${sym}</div>
     <div class="rank-bottom">${label}<br>${sym}</div>
   </div>`;
+}
+
+// Un emplacement du pli en cours : nom du joueur au-dessus de sa carte,
+// tant que le pli est affiché au centre (en cours de constitution ou
+// résolu, avant l'envol vers le tas des plis joués). entry === null pour un
+// emplacement pas encore joué (ou dont la carte est encore en vol, voir
+// pendingTrickSlots) : espace réservé vide, sans nom, pour ne pas décaler
+// la grille selon l'état des autres emplacements.
+function renderTrickSlot(entry) {
+  if (!entry) {
+    return `<div class="trick-slot"><div class="trick-slot-name">&nbsp;</div>${renderCard(null)}</div>`;
+  }
+  return `<div class="trick-slot"><div class="trick-slot-name">${playerName(entry.playerId)}</div>${renderCard(entry.card)}</div>`;
 }
 
 // Pseudos suggérés sur les écrans "Créer"/"Rejoindre" : boutons rapides en
@@ -1007,13 +1066,21 @@ function renderGame() {
   let trickHtml;
   let statusText;
   if (state.trickResult) {
-    const slots = state.trickResult.trick.map((e) => renderCard(e.card)).join('');
+    const slots = state.trickResult.trick.map((e) => renderTrickSlot(e)).join('');
     trickHtml = `<div class="trick-slots">${slots}</div>`;
     statusText = `${playerName(state.trickResult.winnerId)} remporte le pli` +
       (state.trickResult.copasInTrick > 0 ? ` (+${state.trickResult.copasInTrick} ${SUIT_SVG.copas})` : '');
   } else {
-    const slots = hand.currentTrick.map((e) => renderCard(e.card)).join('') +
-      Array.from({ length: hand.numPlayers - hand.currentTrick.length }).map(() => renderCard(null)).join('');
+    // Une carte tout juste jouée reste exclue de son emplacement (affiché
+    // vide) tant que son animation de vol depuis le joueur qui l'a posée
+    // n'est pas arrivée (voir pendingTrickSlots, posé dans hand:update) —
+    // même logique que pour la pioche : ne jamais montrer la carte dans son
+    // état final avant que l'animation ne l'ait montrée visuellement.
+    const slots = hand.currentTrick.map((e, i) => {
+      const isPending = state.pendingTrickSlots.some((p) => p.tricksPlayed === hand.tricksPlayed && p.index === i);
+      return renderTrickSlot(isPending ? null : e);
+    }).join('') +
+      Array.from({ length: hand.numPlayers - hand.currentTrick.length }).map(() => renderTrickSlot(null)).join('');
     trickHtml = `<div class="trick-slots">${slots}</div>`;
     statusText = myTurn ? 'À toi de jouer !' : `Au tour de ${playerName(hand.turnPlayerId)}…`;
   }
@@ -1291,9 +1358,42 @@ socket.on('hand:update', (hand) => {
     state.justDrawnStageStartedAt = null;
     state.trickPileCount = 0;
     state.handGeneration += 1;
+    state.pendingTrickSlots = [];
   }
 
-  render();
+  // Anime l'arrivée de chaque nouvelle carte jouée dans le pli en cours,
+  // depuis la position du joueur qui l'a posée. Ne couvre que les cartes
+  // qui font grossir hand.currentTrick (1er au (N-1)ᵉ joueur d'un pli) : la
+  // dernière carte du pli vide currentTrick côté serveur avant que ce
+  // hand:update ne parte, elle est donc gérée séparément dans
+  // game:trickResolved (qui reçoit encore les N cartes).
+  const newTrickEntries = (!isFreshDeal && prevHand && hand
+    && prevHand.tricksPlayed === hand.tricksPlayed
+    && hand.currentTrick.length > prevHand.currentTrick.length)
+    ? hand.currentTrick.slice(prevHand.currentTrick.length)
+    : [];
+
+  if (newTrickEntries.length > 0 && !prefersReducedMotion()) {
+    const startIndex = prevHand.currentTrick.length;
+    const tricksPlayedNow = hand.tricksPlayed;
+    newTrickEntries.forEach((_, offset) => {
+      state.pendingTrickSlots.push({ tricksPlayed: tricksPlayedNow, index: startIndex + offset });
+    });
+    render();
+    requestAnimationFrame(() => {
+      newTrickEntries.forEach((entry, offset) => {
+        const slotIndex = startIndex + offset;
+        animateTrickCardArrival(entry, slotIndex, () => {
+          state.pendingTrickSlots = state.pendingTrickSlots.filter(
+            (p) => !(p.tricksPlayed === tricksPlayedNow && p.index === slotIndex)
+          );
+          render();
+        });
+      });
+    });
+  } else {
+    render();
+  }
 });
 
 socket.on('game:trickResolved', (payload) => {
@@ -1338,29 +1438,60 @@ socket.on('game:trickResolved', (payload) => {
     state.justDrawnStageStartedAt = null;
   }
 
-  state.trickResult = payload;
-  state.lastTrick = payload; // consultable via le widget une fois l'animation terminée
-  state.lastTrickRevealed = false; // nouveau pli = widget refermé, à retourner à nouveau pour le voir
-  render();
-  setTimeout(() => {
-    // Capture les positions des cartes du pli résolu AVANT qu'elles ne
-    // disparaissent du DOM : le render() juste après les retire de
-    // .trick-slots (state.trickResult repasse à null), donc ces rects sont
-    // le seul moyen de savoir d'où les cartes doivent s'envoler vers le tas.
-    const sourceRects = Array.from(document.querySelectorAll('.trick-slots .pcard'))
-      .map((el) => el.getBoundingClientRect());
-    const handGenAtCapture = state.handGeneration;
+  // Toute animation d'arrivée encore en vol pour ce pli n'a plus lieu
+  // d'être : soit elle a déjà eu le temps d'arriver, soit ce pli vient de se
+  // conclure plus vite qu'elle n'a pu finir (joueurs/bots rapides) — dans
+  // les deux cas la carte fait de toute façon déjà partie du pli résolu
+  // affiché ci-dessous, interrompre proprement plutôt que de la laisser
+  // continuer pour un emplacement qui n'existe plus dans ce nouveau rendu.
+  state.pendingTrickSlots = [];
 
-    state.trickResult = null;
-    // Fin des 3 premiers plis (3 joueurs) : si des cartes ont été piochées,
-    // rejoue une petite distribution depuis la pioche vers chaque joueur.
-    startDrawAnim(payload, myDrawSeqId);
+  const showResolvedTrick = () => {
+    state.trickResult = payload;
+    state.lastTrick = payload; // consultable via le widget une fois l'animation terminée
+    state.lastTrickRevealed = false; // nouveau pli = widget refermé, à retourner à nouveau pour le voir
     render();
+    setTimeout(() => {
+      // Capture les positions des cartes du pli résolu AVANT qu'elles ne
+      // disparaissent du DOM : le render() juste après les retire de
+      // .trick-slots (state.trickResult repasse à null), donc ces rects sont
+      // le seul moyen de savoir d'où les cartes doivent s'envoler vers le tas.
+      const sourceRects = Array.from(document.querySelectorAll('.trick-slots .pcard'))
+        .map((el) => el.getBoundingClientRect());
+      const handGenAtCapture = state.handGeneration;
 
-    // Envole les cartes du pli résolu vers le tas "plis joués" (bord droit)
-    // au lieu de les laisser simplement disparaître.
-    runTrickPileAnim(sourceRects, handGenAtCapture);
-  }, 1400);
+      state.trickResult = null;
+      // Fin des 3 premiers plis (3 joueurs) : si des cartes ont été piochées,
+      // rejoue une petite distribution depuis la pioche vers chaque joueur.
+      startDrawAnim(payload, myDrawSeqId);
+      render();
+
+      // Envole les cartes du pli résolu vers le tas "plis joués" (bord droit)
+      // au lieu de les laisser simplement disparaître.
+      runTrickPileAnim(sourceRects, handGenAtCapture);
+    }, 1400);
+  };
+
+  // La dernière carte du pli (celle qui vient de le compléter) n'est jamais
+  // passée par le rendu "en direct" de hand.currentTrick : le serveur vide
+  // currentTrick avant même d'émettre ce hand:update-ci (voir handleCardPlay
+  // côté serveur), donc son animation d'arrivée doit se jouer ICI plutôt que
+  // dans le handler hand:update comme les cartes précédentes du même pli.
+  // hand.currentTrick (pas encore écrasé par hand:update, qui arrive après)
+  // montre encore l'état d'avant cette carte : un render() ici affiche donc
+  // exactement l'état "en attente" voulu (les N-1 cartes déjà là + un
+  // emplacement vide), le temps que la carte arrive visuellement.
+  if (prefersReducedMotion() || !payload?.trick?.length) {
+    showResolvedTrick();
+    return;
+  }
+
+  render();
+  requestAnimationFrame(() => {
+    const finalEntry = payload.trick[payload.trick.length - 1];
+    const finalSlotIndex = payload.trick.length - 1;
+    animateTrickCardArrival(finalEntry, finalSlotIndex, showResolvedTrick);
+  });
 });
 
 socket.on('game:handOver', (payload) => {
@@ -1376,6 +1507,7 @@ socket.on('game:handOver', (payload) => {
   state.justDrawnStage = null;
   state.justDrawnStageStartedAt = null;
   state.trickPileCount = 0;
+  state.pendingTrickSlots = [];
   render();
 });
 
