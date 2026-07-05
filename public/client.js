@@ -320,9 +320,19 @@ function startDrawAnim(payload, seqId) {
     // Pas d'animation : l'état à jour suffit, mais il ne faut pas laisser le
     // compteur de pioche figé sur sa valeur d'avant-tirage (state.pileCountOverride,
     // posée dès game:trickResolved) puisque la séquence qui le décrémente et
-    // le relâche ne va jamais tourner.
+    // le relâche ne va jamais tourner. Pareil pour ma carte piochée : encore
+    // au stade "pending" (posé dès game:trickResolved, retirée de la main
+    // sans rien afficher à la place) puisque cette fonction s'arrête ici
+    // sans jamais démarrer le ghost — sans ce nettoyage elle resterait
+    // cachée indéfiniment pour un utilisateur en mouvement réduit.
     state.pileCountOverride = null;
     state.pendingDrawAnimId = null;
+    if (payload.myDrawnCard && state.justDrawnCardId === cardId(payload.myDrawnCard)) {
+      state.justDrawnCard = null;
+      state.justDrawnCardId = null;
+      state.justDrawnStage = null;
+      state.justDrawnStageStartedAt = null;
+    }
     render();
     return;
   }
@@ -332,10 +342,17 @@ function startDrawAnim(payload, seqId) {
 
   if (payload.myDrawnCard) {
     const drawnId = cardId(payload.myDrawnCard);
-    state.justDrawnCard = payload.myDrawnCard;
-    state.justDrawnCardId = drawnId;
-    state.justDrawnStage = 'ghost';
-    state.justDrawnStageStartedAt = Date.now();
+    // justDrawnCard/justDrawnCardId/stade "pending" déjà posés dès
+    // game:trickResolved (voir plus haut) pour retirer la carte de la main
+    // sans délai ; on ne fait que démarrer ici la partie visuelle (ghost
+    // flottant) de la séquence. Le garde-fou ci-dessous couvre le cas où un
+    // pli suivant, résolu entre-temps (joueurs/bots rapides), a déjà
+    // remplacé cette carte par la sienne — rien à démarrer alors, elle ne
+    // nous appartient plus.
+    if (state.justDrawnCardId === drawnId) {
+      state.justDrawnStage = 'ghost';
+      state.justDrawnStageStartedAt = Date.now();
+    }
 
     setTimeout(() => {
       if (state.justDrawnCardId !== drawnId) return; // remplacée entre-temps par une pioche plus récente
@@ -1042,31 +1059,38 @@ function renderGame() {
   const dealingInProgress = cardsPhaseActive;
   const playableIds = new Set((hand.playableCards || []).map(cardId));
 
-  // Carte tout juste piochée (fin de pli 1-3) : le temps du stade "ghost",
-  // elle est retirée de la liste normale et affichée à part, face visible,
-  // au-dessus de la main ; au stade "settle", elle réapparaît dans la liste
-  // triée avec une brève mise en évidence.
+  // Carte tout juste piochée (fin de pli 1-3) : dès game:trickResolved (voir
+  // plus bas), le stade passe à "pending" — retirée de la main tout de suite,
+  // sans encore rien afficher à la place. Ça évite qu'elle n'apparaisse
+  // brièvement dans la main (mélangée aux autres) dès que hand:update arrive
+  // (quasi immédiatement après trickResolved, avec la carte déjà dedans côté
+  // serveur), avant même que l'animation de vol depuis la pioche ne
+  // démarre 1400ms plus tard. Cette dernière fait alors passer le stade à
+  // "ghost" (retirée de la liste normale, affichée à part au-dessus de la
+  // main) ; au stade "settle", elle réapparaît dans la liste triée avec une
+  // brève mise en évidence.
   //
   // render() régénère tout le innerHTML à chaque appel, y compris pendant
-  // les 2,2s/1,1s de ces deux stades (un hand:update lié au tour d'un autre
-  // joueur, par ex., peut très bien arriver et déclencher un render() entre-
-  // temps). Un simple remount de l'élément relancerait son animation CSS
-  // d'entrée depuis 0% à chaque fois ("repop" visuel). Pour l'éviter, on ne
-  // rejoue l'animation que le temps qu'elle dure réellement (GHOST/SETTLE_MS,
-  // à faire correspondre aux durées définies dans style.css) : passé ce délai
-  // la carte est affichée directement dans son état final, sans classe
-  // "entering" ; et si un remount survient en plein milieu, un animation-
-  // delay négatif reprend l'animation à l'endroit où elle en était plutôt que
-  // de la relancer depuis le début.
+  // les 2,2s/1,1s des stades "ghost"/"settle" (un hand:update lié au tour
+  // d'un autre joueur, par ex., peut très bien arriver et déclencher un
+  // render() entre-temps). Un simple remount de l'élément relancerait son
+  // animation CSS d'entrée depuis 0% à chaque fois ("repop" visuel). Pour
+  // l'éviter, on ne rejoue l'animation que le temps qu'elle dure réellement
+  // (GHOST/SETTLE_MS, à faire correspondre aux durées définies dans
+  // style.css) : passé ce délai la carte est affichée directement dans son
+  // état final, sans classe "entering" ; et si un remount survient en plein
+  // milieu, un animation-delay négatif reprend l'animation à l'endroit où
+  // elle en était plutôt que de la relancer depuis le début.
   const GHOST_ANIM_MS = 500;
   const SETTLE_ANIM_MS = 1000;
+  const hiddenFromHand = (state.justDrawnStage === 'pending' || state.justDrawnStage === 'ghost') && state.justDrawnCardId;
   const ghostActive = state.justDrawnStage === 'ghost' && state.justDrawnCardId;
   const ghostElapsed = ghostActive ? Date.now() - (state.justDrawnStageStartedAt || Date.now()) : 0;
   const ghostEntering = ghostActive && ghostElapsed < GHOST_ANIM_MS;
   const settleElapsed = state.justDrawnStage === 'settle' ? Date.now() - (state.justDrawnStageStartedAt || Date.now()) : 0;
   const settleEntering = state.justDrawnStage === 'settle' && settleElapsed < SETTLE_ANIM_MS;
 
-  const visibleMyHand = ghostActive
+  const visibleMyHand = hiddenFromHand
     ? hand.myHand.filter((c) => cardId(c) !== state.justDrawnCardId)
     : hand.myHand;
   const justDrawnGhostHtml = ghostActive
@@ -1297,6 +1321,21 @@ socket.on('game:trickResolved', (payload) => {
     myDrawSeqId = dealAnimCounter;
     state.pendingDrawAnimId = myDrawSeqId;
     state.pileCountOverride = state.hand.drawPileCount;
+  }
+
+  // Même logique que pileCountOverride ci-dessus, pour ma carte piochée : si
+  // j'ai pioché, la retire de la main dès MAINTENANT (stade "pending", rien
+  // d'affiché à la place pour l'instant) plutôt que d'attendre startDrawAnim
+  // 1400ms plus tard. Sans ça, hand:update (qui suit tout de suite, avec la
+  // carte déjà dans myHand côté serveur) la ferait apparaître brièvement dans
+  // la main, mélangée aux autres, avant même que l'animation de vol ne
+  // démarre — un rendu parasite. startDrawAnim fera passer le stade à
+  // "ghost" au bon moment pour démarrer la partie visuelle de la séquence.
+  if (payload?.myDrawnCard) {
+    state.justDrawnCard = payload.myDrawnCard;
+    state.justDrawnCardId = cardId(payload.myDrawnCard);
+    state.justDrawnStage = 'pending';
+    state.justDrawnStageStartedAt = null;
   }
 
   state.trickResult = payload;
