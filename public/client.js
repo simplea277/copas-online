@@ -84,6 +84,7 @@ function leaveGame() {
   state.justDrawnStage = null;
   state.justDrawnStageStartedAt = null;
   state.trickPileCount = 0;
+  state.rulesOpen = false;
   render();
 }
 
@@ -97,6 +98,12 @@ const state = {
                 // car cliquer une suggestion de pseudo redéclenche un render() complet, qui
                 // aurait sinon vidé ce champ faute de value= reflétant l'état.
   maxPlayersChoice: 3,
+  rulesOpen: false,   // overlay "Règles du jeu" affiché ou non ; superposé au reste, ne
+                      // touche à aucun autre état (la partie continue derrière normalement)
+  rulesTab: 3,        // 3 ou 4 : version affichée depuis l'accueil (où les deux sont
+                      // consultables) ; ignoré en cours de partie, où hand.numPlayers
+                      // choisit seul la version montrée
+
   room: null,           // dernier room:update reçu
   hand: null,           // dernier hand:update reçu
   myId: null,           // playerId stable (indépendant du socket.id courant)
@@ -511,6 +518,176 @@ function wireNameSuggestions() {
   });
 }
 
+// ---------------------------------------------------------------------------
+// Règles du jeu — contenu figé (voir README/demande utilisateur), mis en
+// forme en HTML mais jamais reformulé. Accessible depuis l'accueil (intro +
+// les deux versions, via onglets) et en cours de partie (intro + seulement
+// la version correspondant à hand.numPlayers, dans une superposition qui ne
+// touche à aucun autre état : la partie continue derrière normalement).
+// ---------------------------------------------------------------------------
+
+const RULES_INTRO_HTML = `
+  <p><strong>Copas</strong> est un jeu de plis inspiré de la Sueca portugaise. Il n'y a pas
+  d'atout : le but est simplement de ramasser <strong>le moins de cartes de copas
+  possible</strong>.</p>
+  <p>Le jeu se joue avec un jeu de cartes portugais à 4 enseignes : <strong>espadas</strong>
+  (épées), <strong>ouros</strong> (deniers), <strong>copas</strong> (coupes) et <strong>paus</strong> (bâtons). Dans
+  chaque enseigne, les cartes sont classées par force croissante :<br>
+  2 · 3 · 4 · 5 · 6 · Valete · Dama · Rei · 7 · As</p>
+  <p>Les règles diffèrent selon que vous jouez à 4 ou à 3 joueurs — choisissez la
+  version qui correspond à votre partie.</p>
+`;
+
+const RULES_4P_HTML = `
+  <h3>Mise en place</h3>
+  <p>Le paquet complet de 40 cartes est distribué en entier : chaque joueur reçoit
+  <strong>10 cartes</strong>. Il n'y a pas de pioche. Le donneur change à chaque manche
+  (le rôle tourne vers le joueur suivant).</p>
+
+  <h3>Déroulement d'un pli</h3>
+  <p>Le joueur assis à la gauche du donneur commence le premier pli en jouant la
+  carte de son choix. Chaque joueur suivant doit ensuite <strong>obligatoirement
+  fournir la couleur demandée</strong> (celle jouée en premier) s'il en possède une
+  en main. S'il n'en a pas, il peut jouer n'importe quelle carte, y compris
+  une copa.</p>
+
+  <h3>Qui remporte le pli ?</h3>
+  <p>Le pli est remporté par la <strong>carte la plus forte de la couleur demandée</strong>.
+  Les cartes des autres couleurs ne peuvent jamais gagner le pli, même si
+  elles sont fortes dans leur propre enseigne — il n'y a pas d'atout. Le
+  gagnant ramasse le pli (les copas qu'il contient s'ajoutent à son compteur
+  de copas de la manche) et entame le pli suivant.</p>
+
+  <h3>Fin de la manche</h3>
+  <p>La manche se termine dès que les 10 cartes de copas ont toutes été jouées,
+  même s'il reste des cartes en main : le reste des plis ne peut alors plus
+  changer le score de la manche.</p>
+
+  <h3>Calcul des points — la règle des points en suspens</h3>
+  <ul>
+    <li><strong>0 copa ramassée</strong> : aucun point.</li>
+    <li><strong>1 à 9 copas ramassées</strong> : ce nombre s'ajoute au score.</li>
+    <li><strong>Les 10 copas ramassées d'un coup</strong> : ces points ne sont <strong>pas</strong>
+      immédiatement comptés. Ils restent <strong>en suspens</strong> jusqu'à la manche
+      suivante :
+      <ul>
+        <li><strong>0 copa</strong> à la manche suivante → les points en suspens <strong>disparaissent</strong>.</li>
+        <li><strong>1 à 9 copas</strong> à la manche suivante → les points en suspens deviennent
+          <strong>définitifs</strong> et s'ajoutent aux copas de cette nouvelle manche.</li>
+        <li><strong>Les 10 copas à nouveau</strong> → les points en suspens <strong>s'accumulent</strong>
+          (20, puis potentiellement plus), et la même règle continue de s'appliquer.</li>
+      </ul>
+    </li>
+  </ul>
+
+  <h3>Fin de la partie</h3>
+  <p>La partie s'arrête dès qu'un joueur atteint <strong>30 points définitifs</strong>. Le
+  gagnant est celui qui a le score le plus bas à ce moment-là.</p>
+`;
+
+const RULES_3P_HTML = `
+  <h3>Mise en place</h3>
+  <p>Le 2 d'espadas est retiré du paquet (39 cartes restantes). Chaque joueur
+  reçoit <strong>10 cartes</strong>, et les <strong>9 cartes restantes</strong> forment une pioche posée
+  au centre de la table. Le donneur change à chaque manche.</p>
+
+  <h3>Déroulement d'un pli</h3>
+  <p>Le joueur assis à la gauche du donneur commence le premier pli.</p>
+  <p><strong>Pendant les 3 premiers plis de la manche</strong> (tant qu'il reste de la
+  pioche) :</p>
+  <ul>
+    <li><strong>Aucune obligation</strong> de suivre la couleur demandée — chacun joue la
+      carte de son choix.</li>
+    <li><strong>Interdiction de jouer une carte de copa</strong>, sauf si un joueur n'a
+      vraiment que des copas en main.</li>
+  </ul>
+  <p>À la fin de chacun de ces 3 premiers plis, <strong>le gagnant du pli pioche en
+  premier</strong>, puis chaque joueur pioche une carte à son tour dans le sens du
+  jeu, de sorte que tout le monde retrouve 10 cartes en main. La pioche est
+  ainsi épuisée après le 3ᵉ pli.</p>
+  <p><strong>À partir du 4ᵉ pli</strong>, les règles redeviennent normales : obligation de
+  fournir la couleur demandée si possible, et les copas peuvent être jouées
+  librement.</p>
+
+  <h3>Qui remporte le pli ?</h3>
+  <p>Le pli est remporté par la <strong>carte la plus forte de la couleur demandée</strong>.
+  Il n'y a pas d'atout : les autres enseignes ne peuvent jamais gagner le pli.
+  Le gagnant ramasse le pli (les copas qu'il contient s'ajoutent à son
+  compteur de copas de la manche) et entame le pli suivant.</p>
+
+  <h3>Fin de la manche</h3>
+  <p>La manche se termine dès que les 10 cartes de copas ont toutes été jouées,
+  même s'il reste des cartes en main.</p>
+
+  <h3>Calcul des points — la règle des points en suspens</h3>
+  <ul>
+    <li><strong>0 copa ramassée</strong> : aucun point.</li>
+    <li><strong>1 à 9 copas ramassées</strong> : ce nombre s'ajoute au score.</li>
+    <li><strong>Les 10 copas ramassées d'un coup</strong> : ces points restent <strong>en suspens</strong>
+      jusqu'à la manche suivante :
+      <ul>
+        <li><strong>0 copa</strong> à la manche suivante → les points en suspens <strong>disparaissent</strong>.</li>
+        <li><strong>1 à 9 copas</strong> à la manche suivante → les points en suspens deviennent
+          <strong>définitifs</strong> et s'ajoutent aux copas de cette nouvelle manche.</li>
+        <li><strong>Les 10 copas à nouveau</strong> → les points en suspens <strong>s'accumulent</strong>, et
+          la même règle continue de s'appliquer.</li>
+      </ul>
+    </li>
+  </ul>
+
+  <h3>Fin de la partie</h3>
+  <p>La partie s'arrête dès qu'un joueur atteint <strong>30 points définitifs</strong>. Le
+  gagnant est celui qui a le score le plus bas à ce moment-là.</p>
+`;
+
+// context : 'home' (intro + onglets 3/4, choix via state.rulesTab) ou
+// 'game' (intro + uniquement la version de hand.numPlayers, pas de choix).
+function renderRulesOverlay(context) {
+  if (!state.rulesOpen) return '';
+
+  let versionsHtml;
+  if (context === 'game' && state.hand) {
+    const n = state.hand.numPlayers;
+    versionsHtml = `
+      <h2>Règles à ${n} joueurs</h2>
+      ${n === 3 ? RULES_3P_HTML : RULES_4P_HTML}
+    `;
+  } else {
+    versionsHtml = `
+      <div class="choice-row">
+        <button class="choice-btn ${state.rulesTab === 3 ? 'active' : ''}" id="btn-rules-tab-3">3 joueurs</button>
+        <button class="choice-btn ${state.rulesTab === 4 ? 'active' : ''}" id="btn-rules-tab-4">4 joueurs</button>
+      </div>
+      <h2>Règles à ${state.rulesTab} joueurs</h2>
+      ${state.rulesTab === 3 ? RULES_3P_HTML : RULES_4P_HTML}
+    `;
+  }
+
+  return `<div class="overlay" id="rules-overlay">
+    <div class="overlay-card rules-card">
+      <button class="rules-close" id="btn-rules-close" title="Fermer" aria-label="Fermer">&times;</button>
+      <h2>Règles du <span class="accent">jeu</span></h2>
+      <div class="rules-content">
+        ${RULES_INTRO_HTML}
+        ${versionsHtml}
+      </div>
+    </div>
+  </div>`;
+}
+
+function wireRulesOverlay() {
+  const closeBtn = document.getElementById('btn-rules-close');
+  if (!closeBtn) return;
+  closeBtn.onclick = () => { state.rulesOpen = false; render(); };
+  document.getElementById('rules-overlay').onclick = (e) => {
+    if (e.target.id === 'rules-overlay') { state.rulesOpen = false; render(); }
+  };
+  const tab4 = document.getElementById('btn-rules-tab-4');
+  const tab3 = document.getElementById('btn-rules-tab-3');
+  if (tab4) tab4.onclick = () => { state.rulesTab = 4; render(); };
+  if (tab3) tab3.onclick = () => { state.rulesTab = 3; render(); };
+}
+
 function playerName(id) {
   if (!state.room) return '?';
   const p = state.room.players.find((p) => p.id === id);
@@ -548,9 +725,13 @@ function renderHome() {
         <div class="divider">ou</div>
         <button class="secondary" id="btn-join">Rejoindre avec un code</button>
       </div>
-    </div>`;
+      <button class="link-btn" id="btn-rules">Règles du jeu</button>
+    </div>
+    ${renderRulesOverlay('home')}`;
   document.getElementById('btn-create').onclick = () => { state.error = null; state.screen = 'create'; render(); };
   document.getElementById('btn-join').onclick = () => { state.error = null; state.screen = 'join'; render(); };
+  document.getElementById('btn-rules').onclick = () => { state.rulesOpen = true; render(); };
+  wireRulesOverlay();
 }
 
 function renderCreate() {
@@ -830,6 +1011,7 @@ function renderGame() {
 
   app.innerHTML = `
     <button class="leave-btn" id="btn-leave">Quitter la partie</button>
+    <button class="rules-btn" id="btn-rules-game">Règles</button>
     ${renderLastTrickWidget()}
     <div id="deal-anim-layer"></div>
     <div class="screen table-wrap">
@@ -846,11 +1028,14 @@ function renderGame() {
       </div>
     </div>
     ${renderHandOverOverlay()}
+    ${renderRulesOverlay('game')}
   `;
 
   document.getElementById('btn-leave').onclick = () => {
     if (confirm('Quitter la partie ? Tu ne pourras pas revenir dans cette manche.')) leaveGame();
   };
+  document.getElementById('btn-rules-game').onclick = () => { state.rulesOpen = true; render(); };
+  wireRulesOverlay();
 
   if (state.trickPileCount > 0) {
     document.getElementById('last-trick-widget').onclick = () => {
