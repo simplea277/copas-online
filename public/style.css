@@ -302,18 +302,28 @@ button.secondary {
   white-space: nowrap;
 }
 
-/* Carte jouée en train de voler depuis la position du joueur (opponent chip
+/* Carte jouée en train d'arriver depuis la position du joueur (opponent chip
    ou ma main) jusqu'à son emplacement dans .trick-slots (voir
-   animateTrickCardArrival). Élément décoratif indépendant du cycle de
-   rendu, comme .deal-card/.trick-fly-card : positionné en fixed puis animé
-   via transform, jamais un obstacle aux clics (pointer-events:none hérité
-   de #deal-anim-layer). Volontairement plus lente que les vols de la
-   pioche/du tas (0.65s) : c'est la carte qu'on veut le plus clairement
-   suivre du regard, d'où elle vient jusqu'à sa place dans le pli. */
-.trick-arrive-card {
-  position: fixed;
-  transform: translate(0, 0);
-  transition: transform 0.65s cubic-bezier(.22,.85,.35,1);
+   beginTrickCardArrival). Contrairement à .deal-card/.trick-fly-card (clones
+   indépendants dans #deal-anim-layer), cette carte est rendue À SA PLACE
+   dans la grille, animée par un @keyframes dont le point de départ
+   (--arrive-dx/--arrive-dy, posé en JS par carte) varie selon le joueur qui
+   l'a jouée. Un animation-delay négatif (voir renderTrickSlot) permet de
+   reprendre l'animation exactement où elle en était si un render()
+   intercurrent (un autre joueur qui pose sa carte pendant que celle-ci vole
+   encore) recrée l'élément en plein vol, au lieu de la faire disparaître
+   jusqu'à la fin. Volontairement plus lente que les vols de la pioche/du
+   tas (0.65s) : c'est la carte qu'on veut le plus clairement suivre du
+   regard, d'où elle vient jusqu'à sa place dans le pli. */
+.trick-slot .pcard.arriving {
+  animation: trickCardArrive 0.65s cubic-bezier(.22,.85,.35,1) forwards;
+}
+@keyframes trickCardArrive {
+  0% { transform: translate(var(--arrive-dx), var(--arrive-dy)); }
+  100% { transform: translate(0, 0); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .trick-slot .pcard.arriving { animation: none; }
 }
 
 /* Rangée pli + pioche (3 joueurs) côte à côte, pour ne jamais empiéter sur

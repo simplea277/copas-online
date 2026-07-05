@@ -87,6 +87,8 @@ function leaveGame() {
   state.rulesOpen = false;
   state.soloStarting = false;
   state.pendingTrickSlots = [];
+  state.trickBeingResolved = null;
+  pendingTrickResultFlyFn = null;
   render();
 }
 
@@ -144,13 +146,30 @@ const state = {
                      // complétion tardive de l'animation d'envol du pli (voir
                      // runTrickPileAnim) de détecter qu'une nouvelle manche a démarré
                      // entre-temps et de ne pas faire grossir le tas déjà remis à zéro.
-  pendingTrickSlots: [], // [{ tricksPlayed, index }] emplacements du pli en cours dont la
-                         // carte est en vol (voir animateTrickCardArrival) : exclus de
-                         // l'affichage normal (montrés vides) jusqu'à l'arrivée, pour ne
-                         // jamais montrer la carte dans son emplacement avant l'animation.
+  pendingTrickSlots: [], // [{ index, entry, phase: 'measuring'|'flying', dx, dy, startedAt }]
+                         // emplacements du pli en cours dont la carte est en cours d'arrivée
+                         // (voir beginTrickCardArrival) : "measuring" = pas encore affichée du
+                         // tout (le temps de mesurer sa position de départ/arrivée) ; "flying"
+                         // = affichée à sa place avec l'animation en cours. Repéré par index
+                         // seul (pas par hand.tricksPlayed, qui peut déjà avoir changé avant
+                         // que l'arrivée de la dernière carte d'un pli ne soit terminée) :
+                         // toujours vidé en entrant dans game:trickResolved, donc jamais à
+                         // cheval sur deux plis différents. Portée par la
+                         // carte elle-même (via une classe + animation-delay négatif, pas un
+                         // clone externe) pour rester robuste à un render() intercurrent.
+  trickBeingResolved: null, // payload de game:trickResolved (les N cartes), posé tant que
+                            // showResolvedTrick n'a pas encore basculé sur trickResult : sert
+                            // de source pour les N-1 cartes déjà posées pendant que la
+                            // dernière carte du pli finit d'arriver (hand.currentTrick est
+                            // déjà vidé à ce moment-là par le hand:update qui a suivi).
 };
 
 let dealAnimCounter = 0;
+
+// Fonction (ou null) à appeler pour écourter l'affichage du pli résolu en
+// cours (voir game:trickResolved/showResolvedTrick) si le pli SUIVANT
+// démarre avant l'écoulement des 1400ms normalement prévus.
+let pendingTrickResultFlyFn = null;
 
 function prefersReducedMotion() {
   return window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -513,40 +532,59 @@ function cardId(c) { return `${c.suit}-${c.rank}`; }
 // de ma main ou de celle d'un adversaire (data-anchor="player-X", posé aussi
 // bien sur .my-hand-wrap que sur chaque .opponent), elle vole visuellement
 // jusqu'à sa place dans .trick-slots plutôt que d'y apparaître
-// instantanément. targetSlotIndex désigne la position (0-based) dans
-// .trick-slots au moment de l'appel : on suppose qu'un emplacement (au moins
-// vide, voir renderTrickSlot) y existe déjà pour pouvoir mesurer sa position
-// d'arrivée exacte. onComplete est TOUJOURS appelé (même en cas d'échec de
-// mesure ou en prefers-reduced-motion), pour que l'appelant révèle la carte
-// dans tous les cas.
-function animateTrickCardArrival(entry, targetSlotIndex, onComplete) {
-  if (prefersReducedMotion()) { onComplete(); return; }
+// instantanément.
+//
+// Contrairement aux autres vols de cartes du projet (deal-card, trick-fly-
+// card...), qui vivent en clone indépendant dans #deal-anim-layer, celle-ci
+// est rendue directement À SA PLACE dans .trick-slots (voir
+// renderTrickSlot), animée par un @keyframes CSS dont le point de départ
+// (--arrive-dx/--arrive-dy) varie par carte. render() régénère tout le
+// innerHTML à chaque appel (donc aussi #deal-anim-layer) : un clone externe
+// s'y ferait détruire en plein vol par n'importe quel hand:update suivant
+// (un autre joueur qui pose sa carte pendant que celle-ci vole encore), ce
+// qui la faisait disparaître jusqu'à ce que son propre minuteur la révèle —
+// les AUTRES cartes déjà posées, elles, n'étaient pas touchées par ce
+// remount, donc le symptôme se limitait à la carte en vol elle-même. En la
+// rendant à sa place avec un animation-delay négatif basé sur le temps
+// écoulé (même principe que .just-drawn-ghost/.pcard.just-drawn), un
+// remount en plein vol reprend l'animation exactement où elle en était au
+// lieu de la perdre.
+const TRICK_ARRIVE_MS = 650; // assez lent pour bien suivre d'où vient la carte, sans traîner
 
-  const layer = document.getElementById('deal-anim-layer');
-  const targetSlotEl = document.querySelectorAll('.trick-slots .trick-slot')[targetSlotIndex];
-  const sourceEl = document.querySelector(`[data-anchor="player-${entry.playerId}"]`);
-  if (!layer || !targetSlotEl || !sourceEl) { onComplete(); return; }
+function beginTrickCardArrival(entry, slotIndex, onComplete) {
+  const pendingEntry = { index: slotIndex, entry, phase: 'measuring' };
+  state.pendingTrickSlots.push(pendingEntry);
+  render();
 
-  const sourceRect = sourceEl.getBoundingClientRect();
-  const targetRect = (targetSlotEl.querySelector('.pcard') || targetSlotEl).getBoundingClientRect();
+  requestAnimationFrame(() => {
+    // Toujours en cours ? (pas déjà nettoyée par un pli résolu entre-temps)
+    if (!state.pendingTrickSlots.includes(pendingEntry)) return;
 
-  const wrapper = document.createElement('div');
-  wrapper.innerHTML = renderCard(entry.card, 'trick-arrive-card');
-  const cardEl = wrapper.firstElementChild;
-  const startLeft = sourceRect.left + sourceRect.width / 2 - targetRect.width / 2;
-  const startTop = sourceRect.top + sourceRect.height / 2 - targetRect.height / 2;
-  cardEl.style.left = `${startLeft}px`;
-  cardEl.style.top = `${startTop}px`;
-  layer.appendChild(cardEl);
-  cardEl.getBoundingClientRect(); // force le layout avant de déclencher la transition
+    const targetSlotEl = document.querySelectorAll('.trick-slots .trick-slot')[slotIndex];
+    const sourceEl = document.querySelector(`[data-anchor="player-${entry.playerId}"]`);
+    if (!targetSlotEl || !sourceEl) {
+      // Impossible de mesurer : révèle directement sans animation plutôt que
+      // de laisser la carte cachée indéfiniment.
+      state.pendingTrickSlots = state.pendingTrickSlots.filter((p) => p !== pendingEntry);
+      render();
+      onComplete();
+      return;
+    }
 
-  cardEl.style.transform = `translate(${targetRect.left - startLeft}px, ${targetRect.top - startTop}px)`;
+    const sourceRect = sourceEl.getBoundingClientRect();
+    const targetRect = (targetSlotEl.querySelector('.pcard') || targetSlotEl).getBoundingClientRect();
+    pendingEntry.phase = 'flying';
+    pendingEntry.dx = Math.round(sourceRect.left + sourceRect.width / 2 - (targetRect.left + targetRect.width / 2));
+    pendingEntry.dy = Math.round(sourceRect.top + sourceRect.height / 2 - (targetRect.top + targetRect.height / 2));
+    pendingEntry.startedAt = Date.now();
+    render();
 
-  const FLIGHT_MS = 650; // assez lent pour bien suivre d'où vient la carte, sans traîner
-  setTimeout(() => {
-    cardEl.remove();
-    onComplete();
-  }, FLIGHT_MS);
+    setTimeout(() => {
+      state.pendingTrickSlots = state.pendingTrickSlots.filter((p) => p !== pendingEntry);
+      render();
+      onComplete();
+    }, TRICK_ARRIVE_MS);
+  });
 }
 
 function renderCard(card, extraClass = '', extraStyle = '') {
@@ -564,14 +602,27 @@ function renderCard(card, extraClass = '', extraStyle = '') {
 // Un emplacement du pli en cours : nom du joueur au-dessus de sa carte,
 // tant que le pli est affiché au centre (en cours de constitution ou
 // résolu, avant l'envol vers le tas des plis joués). entry === null pour un
-// emplacement pas encore joué (ou dont la carte est encore en vol, voir
-// pendingTrickSlots) : espace réservé vide, sans nom, pour ne pas décaler
-// la grille selon l'état des autres emplacements.
-function renderTrickSlot(entry) {
+// emplacement pas encore joué (ou dont la carte est encore en cours de
+// mesure avant son vol, voir beginTrickCardArrival) : espace réservé vide,
+// sans nom, pour ne pas décaler la grille selon l'état des autres
+// emplacements. flying (optionnel) = l'entrée de state.pendingTrickSlots en
+// phase "flying" : affiche la carte+nom tout de suite, avec l'animation
+// d'arrivée en cours (--arrive-dx/dy + animation-delay négatif, robuste à
+// un remount en plein vol — voir beginTrickCardArrival).
+function renderTrickSlot(entry, flying) {
   if (!entry) {
     return `<div class="trick-slot"><div class="trick-slot-name">&nbsp;</div>${renderCard(null)}</div>`;
   }
-  return `<div class="trick-slot"><div class="trick-slot-name">${playerName(entry.playerId)}</div>${renderCard(entry.card)}</div>`;
+  let cls = '';
+  let style = '';
+  if (flying) {
+    const elapsed = Date.now() - flying.startedAt;
+    if (elapsed < TRICK_ARRIVE_MS) {
+      cls = 'arriving';
+      style = `--arrive-dx:${flying.dx}px;--arrive-dy:${flying.dy}px;animation-delay:-${elapsed}ms;`;
+    }
+  }
+  return `<div class="trick-slot"><div class="trick-slot-name">${playerName(entry.playerId)}</div>${renderCard(entry.card, cls, style)}</div>`;
 }
 
 // Pseudos suggérés sur les écrans "Créer"/"Rejoindre" : boutons rapides en
@@ -1071,16 +1122,38 @@ function renderGame() {
     statusText = `${playerName(state.trickResult.winnerId)} remporte le pli` +
       (state.trickResult.copasInTrick > 0 ? ` (+${state.trickResult.copasInTrick} ${SUIT_SVG.copas})` : '');
   } else {
-    // Une carte tout juste jouée reste exclue de son emplacement (affiché
-    // vide) tant que son animation de vol depuis le joueur qui l'a posée
-    // n'est pas arrivée (voir pendingTrickSlots, posé dans hand:update) —
-    // même logique que pour la pioche : ne jamais montrer la carte dans son
-    // état final avant que l'animation ne l'ait montrée visuellement.
-    const slots = hand.currentTrick.map((e, i) => {
-      const isPending = state.pendingTrickSlots.some((p) => p.tricksPlayed === hand.tricksPlayed && p.index === i);
-      return renderTrickSlot(isPending ? null : e);
-    }).join('') +
-      Array.from({ length: hand.numPlayers - hand.currentTrick.length }).map(() => renderTrickSlot(null)).join('');
+    // Une carte tout juste jouée reste exclue de son emplacement (affichée
+    // vide) tant qu'elle n'est pas encore mesurée (phase "measuring", voir
+    // beginTrickCardArrival) ; une fois en vol (phase "flying"), elle est
+    // affichée à sa place avec l'animation d'arrivée en cours, robuste à un
+    // remount en plein vol (voir renderTrickSlot). Boucle sur TOUS les
+    // emplacements (pas seulement hand.currentTrick.length) : la dernière
+    // carte d'un pli (gérée par game:trickResolved, voir plus bas) occupe un
+    // index au-delà de hand.currentTrick.length, dans la zone qui serait
+    // sinon juste du remplissage vide.
+    //
+    // Le filtre ne se fie qu'à l'index (pas à hand.tricksPlayed) : pour la
+    // dernière carte d'un pli, hand:update (qui incrémente tricksPlayed et
+    // vide currentTrick) arrive AVANT que son animation d'arrivée à elle
+    // n'ait fini de jouer — comparer à hand.tricksPlayed aurait fait
+    // disparaître les N-1 autres cartes déjà posées le temps que cette
+    // dernière carte finisse d'arriver (pendingTrickSlots est de toute façon
+    // toujours vidé en entrant dans game:trickResolved, donc jamais à cheval
+    // sur deux plis différents).
+    //
+    // trickBeingResolved (posé dans game:trickResolved, tant que
+    // showResolvedTrick n'a pas encore pris le relais avec trickResult) sert
+    // de source pour les N-1 AUTRES cartes déjà posées : hand.currentTrick
+    // est lui aussi déjà vidé à ce moment-là par le hand:update qui a suivi
+    // la résolution, donc s'y fier les ferait disparaître le temps que la
+    // dernière carte du pli finisse d'arriver.
+    const liveTrick = state.trickBeingResolved ? state.trickBeingResolved.trick : hand.currentTrick;
+    const slots = Array.from({ length: hand.numPlayers }).map((_, i) => {
+      const pending = state.pendingTrickSlots.find((p) => p.index === i);
+      if (pending?.phase === 'measuring') return renderTrickSlot(null);
+      if (pending?.phase === 'flying') return renderTrickSlot(pending.entry, pending);
+      return renderTrickSlot(liveTrick[i] || null);
+    }).join('');
     trickHtml = `<div class="trick-slots">${slots}</div>`;
     statusText = myTurn ? 'À toi de jouer !' : `Au tour de ${playerName(hand.turnPlayerId)}…`;
   }
@@ -1359,6 +1432,8 @@ socket.on('hand:update', (hand) => {
     state.trickPileCount = 0;
     state.handGeneration += 1;
     state.pendingTrickSlots = [];
+    state.trickBeingResolved = null;
+    pendingTrickResultFlyFn = null;
   }
 
   // Anime l'arrivée de chaque nouvelle carte jouée dans le pli en cours,
@@ -1373,23 +1448,20 @@ socket.on('hand:update', (hand) => {
     ? hand.currentTrick.slice(prevHand.currentTrick.length)
     : [];
 
+  // Le pli PRÉCÉDENT démarre tout juste sa fenêtre d'affichage de 1400ms
+  // (voir showResolvedTrick) quand celui-ci a déjà commencé côté serveur :
+  // écourte-la tout de suite plutôt que d'attendre — tant que trickResult
+  // reste affiché, le rendu ignore pendingTrickSlots, donc la première
+  // carte de CE pli resterait invisible jusqu'à l'écoulement complet de
+  // l'ancien délai avant d'apparaître d'un coup.
+  if (newTrickEntries.length > 0 && pendingTrickResultFlyFn) {
+    pendingTrickResultFlyFn();
+  }
+
   if (newTrickEntries.length > 0 && !prefersReducedMotion()) {
     const startIndex = prevHand.currentTrick.length;
-    const tricksPlayedNow = hand.tricksPlayed;
-    newTrickEntries.forEach((_, offset) => {
-      state.pendingTrickSlots.push({ tricksPlayed: tricksPlayedNow, index: startIndex + offset });
-    });
-    render();
-    requestAnimationFrame(() => {
-      newTrickEntries.forEach((entry, offset) => {
-        const slotIndex = startIndex + offset;
-        animateTrickCardArrival(entry, slotIndex, () => {
-          state.pendingTrickSlots = state.pendingTrickSlots.filter(
-            (p) => !(p.tricksPlayed === tricksPlayedNow && p.index === slotIndex)
-          );
-          render();
-        });
-      });
+    newTrickEntries.forEach((entry, offset) => {
+      beginTrickCardArrival(entry, startIndex + offset, () => {});
     });
   } else {
     render();
@@ -1398,6 +1470,18 @@ socket.on('hand:update', (hand) => {
 
 socket.on('game:trickResolved', (payload) => {
   if (state.screen === 'home') return;
+
+  // Fige le contenu du pli tel qu'il vient d'être résolu (les N cartes,
+  // avec leur joueur) : hand:update (qui suit tout de suite) vide
+  // hand.currentTrick et incrémente tricksPlayed AVANT que l'animation
+  // d'arrivée de cette dernière carte n'ait fini de jouer (voir plus bas).
+  // Sans ça, les N-1 AUTRES cartes déjà posées — qui, elles, se fient à
+  // hand.currentTrick[i] faute d'entrée dans pendingTrickSlots — se
+  // retrouveraient soudain sans source (currentTrick déjà vidé), donc
+  // affichées vides, jusqu'à ce que showResolvedTrick prenne le relais avec
+  // trickResult. Remplacé par trickResult une fois showResolvedTrick
+  // appelé ; remis à null aux mêmes points que pendingTrickSlots.
+  state.trickBeingResolved = payload;
 
   // Capturé ICI, avant tout autre traitement : hand:update (qui suit tout de
   // suite, le serveur l'émettant juste après) arrive avec drawPileCount déjà
@@ -1446,30 +1530,44 @@ socket.on('game:trickResolved', (payload) => {
   // continuer pour un emplacement qui n'existe plus dans ce nouveau rendu.
   state.pendingTrickSlots = [];
 
+  const flyResolvedTrickToPile = () => {
+    if (pendingTrickResultFlyFn !== flyResolvedTrickToPile) return; // déjà fait entre-temps
+    pendingTrickResultFlyFn = null;
+    // Capture les positions des cartes du pli résolu AVANT qu'elles ne
+    // disparaissent du DOM : le render() juste après les retire de
+    // .trick-slots (state.trickResult repasse à null), donc ces rects sont
+    // le seul moyen de savoir d'où les cartes doivent s'envoler vers le tas.
+    const sourceRects = Array.from(document.querySelectorAll('.trick-slots .pcard'))
+      .map((el) => el.getBoundingClientRect());
+    const handGenAtCapture = state.handGeneration;
+
+    state.trickResult = null;
+    // Fin des 3 premiers plis (3 joueurs) : si des cartes ont été piochées,
+    // rejoue une petite distribution depuis la pioche vers chaque joueur.
+    startDrawAnim(payload, myDrawSeqId);
+    render();
+
+    // Envole les cartes du pli résolu vers le tas "plis joués" (bord droit)
+    // au lieu de les laisser simplement disparaître.
+    runTrickPileAnim(sourceRects, handGenAtCapture);
+  };
+
   const showResolvedTrick = () => {
+    state.trickBeingResolved = null; // trickResult prend le relais à partir d'ici
     state.trickResult = payload;
     state.lastTrick = payload; // consultable via le widget une fois l'animation terminée
     state.lastTrickRevealed = false; // nouveau pli = widget refermé, à retourner à nouveau pour le voir
     render();
-    setTimeout(() => {
-      // Capture les positions des cartes du pli résolu AVANT qu'elles ne
-      // disparaissent du DOM : le render() juste après les retire de
-      // .trick-slots (state.trickResult repasse à null), donc ces rects sont
-      // le seul moyen de savoir d'où les cartes doivent s'envoler vers le tas.
-      const sourceRects = Array.from(document.querySelectorAll('.trick-slots .pcard'))
-        .map((el) => el.getBoundingClientRect());
-      const handGenAtCapture = state.handGeneration;
-
-      state.trickResult = null;
-      // Fin des 3 premiers plis (3 joueurs) : si des cartes ont été piochées,
-      // rejoue une petite distribution depuis la pioche vers chaque joueur.
-      startDrawAnim(payload, myDrawSeqId);
-      render();
-
-      // Envole les cartes du pli résolu vers le tas "plis joués" (bord droit)
-      // au lieu de les laisser simplement disparaître.
-      runTrickPileAnim(sourceRects, handGenAtCapture);
-    }, 1400);
+    // pendingTrickResultFlyFn (portée module) permet à hand:update d'écourter
+    // ce délai si le pli SUIVANT démarre avant la fin des 1400ms (joueurs ou
+    // bots rapides) : tant que trickResult reste affiché, le rendu ignore
+    // pendingTrickSlots (branche if (state.trickResult)), donc la première
+    // carte du pli suivant resterait invisible (mesurée/animée dans le vide)
+    // jusqu'à l'écoulement complet de ce délai, avant de réapparaître d'un
+    // coup — déclencher la bascule tout de suite dès qu'on sait qu'elle est
+    // de toute façon due évite ce trou.
+    pendingTrickResultFlyFn = flyResolvedTrickToPile;
+    setTimeout(flyResolvedTrickToPile, 1400);
   };
 
   // La dernière carte du pli (celle qui vient de le compléter) n'est jamais
@@ -1478,20 +1576,18 @@ socket.on('game:trickResolved', (payload) => {
   // côté serveur), donc son animation d'arrivée doit se jouer ICI plutôt que
   // dans le handler hand:update comme les cartes précédentes du même pli.
   // hand.currentTrick (pas encore écrasé par hand:update, qui arrive après)
-  // montre encore l'état d'avant cette carte : un render() ici affiche donc
-  // exactement l'état "en attente" voulu (les N-1 cartes déjà là + un
+  // montre encore l'état d'avant cette carte : beginTrickCardArrival, en
+  // rendant tout de suite l'emplacement vide (phase "measuring"), affiche
+  // donc exactement l'état "en attente" voulu (les N-1 cartes déjà là + un
   // emplacement vide), le temps que la carte arrive visuellement.
   if (prefersReducedMotion() || !payload?.trick?.length) {
     showResolvedTrick();
     return;
   }
 
-  render();
-  requestAnimationFrame(() => {
-    const finalEntry = payload.trick[payload.trick.length - 1];
-    const finalSlotIndex = payload.trick.length - 1;
-    animateTrickCardArrival(finalEntry, finalSlotIndex, showResolvedTrick);
-  });
+  const finalEntry = payload.trick[payload.trick.length - 1];
+  const finalSlotIndex = payload.trick.length - 1;
+  beginTrickCardArrival(finalEntry, finalSlotIndex, showResolvedTrick);
 });
 
 socket.on('game:handOver', (payload) => {
@@ -1508,6 +1604,8 @@ socket.on('game:handOver', (payload) => {
   state.justDrawnStageStartedAt = null;
   state.trickPileCount = 0;
   state.pendingTrickSlots = [];
+  state.trickBeingResolved = null;
+  pendingTrickResultFlyFn = null;
   render();
 });
 
