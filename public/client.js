@@ -7,11 +7,21 @@ const app = document.getElementById('app');
 
 const RANK_LABEL = { '2':'2','3':'3','4':'4','5':'5','6':'6', valete:'V', dama:'D', rei:'R', '7':'7', as:'A' };
 
-// Ordre d'affichage de la main : copas, ouros, espadas, paus — puis du plus
-// faible au plus fort dans chaque enseigne.
+// Ordre d'affichage de la main : copas, ouros, espadas, paus — toujours
+// dans cet ordre d'enseignes, quel que soit le sens de tri. À l'intérieur
+// d'une enseigne, du plus faible au plus fort par défaut, ou l'inverse si
+// state.handSortDesc est activé (bouton bascule "Tri", voir #btn-sort-toggle).
 const SUIT_ORDER = { copas: 0, ouros: 1, espadas: 2, paus: 3 };
-function sortHand(cards) {
-  return [...cards].sort((a, b) => SUIT_ORDER[a.suit] - SUIT_ORDER[b.suit] || a.strength - b.strength);
+function sortHand(cards, desc) {
+  return [...cards].sort((a, b) => SUIT_ORDER[a.suit] - SUIT_ORDER[b.suit] || (desc ? b.strength - a.strength : a.strength - b.strength));
+}
+
+const HAND_SORT_KEY = 'copas:handSortDesc';
+function loadHandSortDesc() {
+  try { return localStorage.getItem(HAND_SORT_KEY) === '1'; } catch (_) { return false; }
+}
+function saveHandSortDesc(desc) {
+  try { localStorage.setItem(HAND_SORT_KEY, desc ? '1' : '0'); } catch (_) { /* stockage indisponible, tant pis */ }
 }
 
 // Enseignes du jeu portugais (Sueca) : épées, coupes, deniers, bâtons.
@@ -102,6 +112,9 @@ const state = {
                 // car cliquer une suggestion de pseudo redéclenche un render() complet, qui
                 // aurait sinon vidé ce champ faute de value= reflétant l'état.
   maxPlayersChoice: 3,
+  handSortDesc: loadHandSortDesc(), // sens du tri par force dans ma main (voir sortHand) ;
+                                     // préférence par appareil, conservée en localStorage,
+                                     // volontairement absente de la remise à zéro de leaveGame()
   soloStarting: false, // true pendant l'enchaînement room:create -> room:fillBots -> room:start du mode solo
   rulesOpen: false,   // overlay "Règles du jeu" affiché ou non ; superposé au reste, ne
                       // touche à aucun autre état (la partie continue derrière normalement)
@@ -1240,7 +1253,7 @@ function renderGame() {
 
   const myHandHtml = dealingInProgress
     ? Array.from({ length: hand.myHand.length }).map(() => `<div class="pcard card-back"></div>`).join('')
-    : sortHand(visibleMyHand).map((c) => {
+    : sortHand(visibleMyHand, state.handSortDesc).map((c) => {
         const isPlayable = myTurn && playableIds.has(cardId(c));
         const isJustDrawn = state.justDrawnStage === 'settle' && cardId(c) === state.justDrawnCardId;
         const cls = [isPlayable ? 'playable' : (myTurn ? 'unplayable' : ''), isJustDrawn ? 'just-drawn' : '', (isJustDrawn && settleEntering) ? 'entering' : '']
@@ -1264,6 +1277,7 @@ function renderGame() {
       </div>
       <div class="my-hand-wrap" data-anchor="player-${myId}">
         <div class="copas-count my-copas-count" title="Copas ramassées dans cette manche">${SUIT_SVG.copas}<span>+${hand.tricksWonCopas[myId] ?? 0}</span></div>
+        <button class="my-sort-toggle-btn" id="btn-sort-toggle" title="${state.handSortDesc ? 'Trier par force croissante' : 'Trier par force décroissante'}" aria-label="Inverser le sens de tri des cartes">Tri</button>
         ${justDrawnGhostHtml}
         <div class="my-hand ${dealingInProgress ? 'my-hand-pending' : ''}">${myHandHtml}</div>
       </div>
@@ -1280,6 +1294,12 @@ function renderGame() {
   }
   document.getElementById('btn-rules-game').onclick = () => { state.rulesOpen = true; render(); };
   wireRulesOverlay();
+
+  document.getElementById('btn-sort-toggle').onclick = () => {
+    state.handSortDesc = !state.handSortDesc;
+    saveHandSortDesc(state.handSortDesc);
+    render();
+  };
 
   if (state.trickPileCount > 0) {
     document.getElementById('last-trick-widget').onclick = () => {

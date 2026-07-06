@@ -638,6 +638,39 @@ button.secondary {
   gap: 0;
   -webkit-overflow-scrolling: touch;
 }
+
+/* Bouton bascule du sens de tri de ma main (croissant/décroissant par force
+   à l'intérieur de chaque enseigne, voir sortHand) — jamais l'ordre des
+   enseignes, qui reste fixe. En miroir exact de .my-copas-count (même
+   ligne, même décalage, symétrique à gauche plutôt qu'à droite), avec la
+   même boîte que .copas-count (hauteur, bordure, arrondi, échelle de
+   texte, fond) pour qu'ils lisent clairement comme une paire — seuls le
+   contenu (texte vs icône+chiffre), la couleur du texte (ivoire ici,
+   contre le rouge vif propre au compteur de copas) et le padding
+   horizontal diffèrent : un peu plus large ici pour laisser respirer le
+   mot "Tri", qui se sentait à l'étroit avec le padding 7px repris tel quel
+   du compteur de copas (padding vertical inchangé, donc même hauteur). */
+.my-sort-toggle-btn {
+  position: absolute;
+  top: -28px;
+  left: 6px;
+  z-index: 6;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.76rem;
+  font-weight: 700;
+  color: var(--ivory-dim);
+  background: rgba(10,20,15,0.55);
+  border: 1px solid rgba(245,239,224,0.2);
+  padding: 2px 13px;
+  border-radius: 10px;
+  font-family: var(--font-body);
+  backdrop-filter: blur(4px);
+  cursor: pointer;
+  transition: color 0.15s ease, border-color 0.15s ease;
+}
+.my-sort-toggle-btn:hover { color: var(--ivory); border-color: rgba(245,239,224,0.4); }
 /* Taille des cartes de la main : fluide plutôt que fixe, pour ne jamais
    nécessiter de défilement horizontal avec 10 cartes, qu'on soit sur un
    petit téléphone (390px) ou un écran large (le conteneur de jeu est de
