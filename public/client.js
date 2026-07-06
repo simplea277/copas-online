@@ -1111,7 +1111,7 @@ function renderGame() {
       ${pid === dealerId ? dealerBadge : ''}
       <div class="name">${playerName(pid)}${isBotPlayer(pid) ? botBadge() : ''}</div>
       <div class="mini-cards">${miniCards}</div>
-      <div class="copas-count" title="Copas ramassées dans cette manche">${SUIT_SVG.copas}<span>${copasWon}</span></div>
+      <div class="copas-count" title="Copas ramassées dans cette manche">${SUIT_SVG.copas}<span>+${copasWon}</span></div>
     </div>`;
   }).join('');
 
