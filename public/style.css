@@ -35,7 +35,12 @@ html, body {
 }
 
 #app {
+  /* dvh tient compte de la barre d'adresse Safari iOS (qui rétrécit/agrandit
+     la fenêtre visible au scroll) ; 100vh seul provoquait un défilement
+     vertical parasite sur iPhone. Repli en 100vh d'abord pour les
+     navigateurs qui ne connaissent pas dvh. */
   min-height: 100vh;
+  min-height: 100dvh;
   display: flex;
   flex-direction: column;
   align-items: center;
