@@ -1263,7 +1263,7 @@ function renderGame() {
         <div class="status-line ${myTurn ? 'my-turn' : ''}">${statusText}</div>
       </div>
       <div class="my-hand-wrap" data-anchor="player-${myId}">
-        <div class="copas-count my-copas-count" title="Copas ramassées dans cette manche">${SUIT_SVG.copas}<span>${hand.tricksWonCopas[myId] ?? 0}</span></div>
+        <div class="copas-count my-copas-count" title="Copas ramassées dans cette manche">${SUIT_SVG.copas}<span>+${hand.tricksWonCopas[myId] ?? 0}</span></div>
         ${justDrawnGhostHtml}
         <div class="my-hand ${dealingInProgress ? 'my-hand-pending' : ''}">${myHandHtml}</div>
       </div>

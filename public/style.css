@@ -288,10 +288,16 @@ button.secondary {
 }
 .copas-count .suit-svg { width: 0.85em; height: 0.85em; }
 
+/* Décalé assez haut pour ne jamais chevaucher les cartes de la main (qui
+   vont de 10 à 0 au fil de la manche) : .pcard est aussi position:relative
+   et arrive après dans le DOM, donc sans cette marge ET ce z-index, les
+   cartes se peignaient par-dessus (même niveau d'empilement "z-index:auto",
+   départagé par l'ordre du DOM) et masquaient le compteur sur mobile. */
 .my-copas-count {
   position: absolute;
-  top: -4px;
+  top: -28px;
   right: 6px;
+  z-index: 6;
   background: rgba(10,20,15,0.55);
   border: 1px solid rgba(245,239,224,0.2);
   padding: 2px 7px;
