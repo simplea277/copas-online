@@ -516,53 +516,50 @@ button.secondary {
 /* Icônes SVG des enseignes (remplacent les symboles ♠♥♦♣) */
 .suit-svg { display: inline-block; vertical-align: -0.125em; }
 
-/* Bouton "Quitter la partie" — icône croix compacte. Zone tactile fixée à
-   40x40px (bonne pratique mobile) même si le symbole visible est petit.
-   Toujours au-dessus (même par-dessus l'overlay de fin de manche/partie)
-   pour rester joignable à tout moment en jeu, sauf pendant que l'overlay
-   des règles est ouvert (non rendu du tout dans ce cas, voir renderGame). */
-.leave-btn {
+/* Boutons "Quitter la partie" (croix) et "Règles" en cours de partie :
+   même échelle visuelle pour les deux (34px de haut), mais l'élément
+   .hud-btn lui-même reste une zone tactile d'au moins 40x40px (bonne
+   pratique mobile) — la face visible plus petite (.hud-btn-face, fond +
+   bordure) est centrée dedans, sans agrandir le rendu à l'écran. Toujours
+   au-dessus (même par-dessus l'overlay de fin de manche/partie) pour
+   rester joignables à tout moment en jeu ; le bouton "Quitter" en plus
+   disparaît tant que l'overlay des règles est ouvert (non rendu du tout
+   dans ce cas, voir renderGame). */
+.hud-btn {
   position: fixed;
   top: calc(env(safe-area-inset-top, 10px) + 8px);
-  right: 12px;
   z-index: 60;
-  width: 40px;
-  height: 40px;
+  min-width: 40px;
+  min-height: 40px;
+  padding: 0;
+  border: none;
+  background: transparent;
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(10,20,15,0.55);
-  border: 1px solid rgba(245,239,224,0.25);
-  color: var(--ivory-dim);
-  font-family: var(--font-body);
-  font-size: 1.1rem;
-  line-height: 1;
-  padding: 0;
-  border-radius: 50%;
   cursor: pointer;
-  backdrop-filter: blur(4px);
 }
-.leave-btn:hover { color: var(--ivory); border-color: rgba(245,239,224,0.4); }
-
-/* Bouton "Règles" en cours de partie — même traitement que "Quitter la
-   partie" mais du côté gauche, accessible à tout moment sans perturber la
-   partie (overlay superposé, voir .rules-card plus bas). */
-.rules-btn {
-  position: fixed;
-  top: calc(env(safe-area-inset-top, 10px) + 8px);
-  left: 12px;
-  z-index: 60;
+.hud-btn-face {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 34px;
+  padding: 0 12px;
   background: rgba(10,20,15,0.55);
   border: 1px solid rgba(245,239,224,0.25);
+  border-radius: 17px;
   color: var(--ivory-dim);
   font-family: var(--font-body);
   font-size: 0.72rem;
-  padding: 6px 10px;
-  border-radius: 20px;
-  cursor: pointer;
   backdrop-filter: blur(4px);
+  transition: color 0.15s ease, border-color 0.15s ease;
 }
-.rules-btn:hover { color: var(--ivory); border-color: rgba(245,239,224,0.4); }
+.hud-btn:hover .hud-btn-face { color: var(--ivory); border-color: rgba(245,239,224,0.4); }
+
+.leave-btn { right: 12px; }
+.leave-btn .hud-btn-face { width: 34px; padding: 0; border-radius: 50%; font-size: 1rem; line-height: 1; }
+
+.rules-btn { left: 12px; }
 
 /* Lien discret "Règles du jeu" sous les boutons principaux de l'accueil :
    volontairement moins voyant qu'un bouton primary/secondary. */

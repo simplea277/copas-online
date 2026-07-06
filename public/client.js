@@ -1249,8 +1249,8 @@ function renderGame() {
       }).join('');
 
   app.innerHTML = `
-    ${state.rulesOpen ? '' : `<button class="leave-btn" id="btn-leave" aria-label="Quitter la partie" title="Quitter la partie">✕</button>`}
-    <button class="rules-btn" id="btn-rules-game">Règles</button>
+    ${state.rulesOpen ? '' : `<button class="hud-btn leave-btn" id="btn-leave" aria-label="Quitter la partie" title="Quitter la partie"><span class="hud-btn-face">✕</span></button>`}
+    <button class="hud-btn rules-btn" id="btn-rules-game" aria-label="Règles du jeu" title="Règles du jeu"><span class="hud-btn-face">Règles</span></button>
     ${renderLastTrickWidget()}
     <div id="deal-anim-layer"></div>
     <div class="screen table-wrap">
