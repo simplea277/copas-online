@@ -229,7 +229,12 @@ button.secondary {
   flex-direction: column;
   justify-content: space-between;
   gap: 12px;
-  padding-top: 34px; /* laisse la place au bouton "Quitter la partie" (fixed) */
+  /* Laisse la place aux boutons "Règles"/"Quitter" (fixed, hors du flux) et
+     au badge donneur (déborde de -8px au-dessus du score-chip concerné) :
+     sans cette marge, le premier ou dernier score-chip (le plus proche d'un
+     bord) peut passer sous ces boutons, surtout à 4 joueurs où les chips
+     s'étalent davantage. */
+  padding-top: 60px;
 }
 
 .opponents-row {
