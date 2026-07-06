@@ -1249,7 +1249,7 @@ function renderGame() {
       }).join('');
 
   app.innerHTML = `
-    <button class="leave-btn" id="btn-leave">Quitter la partie</button>
+    ${state.rulesOpen ? '' : `<button class="leave-btn" id="btn-leave" aria-label="Quitter la partie" title="Quitter la partie">✕</button>`}
     <button class="rules-btn" id="btn-rules-game">Règles</button>
     ${renderLastTrickWidget()}
     <div id="deal-anim-layer"></div>
@@ -1270,9 +1270,12 @@ function renderGame() {
     ${renderRulesOverlay('game')}
   `;
 
-  document.getElementById('btn-leave').onclick = () => {
-    if (confirm('Quitter la partie ? Tu ne pourras pas revenir dans cette manche.')) leaveGame();
-  };
+  const leaveBtn = document.getElementById('btn-leave');
+  if (leaveBtn) {
+    leaveBtn.onclick = () => {
+      if (confirm('Quitter la partie ? Tu ne pourras pas revenir dans cette manche.')) leaveGame();
+    };
+  }
   document.getElementById('btn-rules-game').onclick = () => { state.rulesOpen = true; render(); };
   wireRulesOverlay();
 
