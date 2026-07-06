@@ -1106,11 +1106,13 @@ function renderGame() {
     const count = hand.handSizes[pid] ?? 0;
     const active = hand.turnPlayerId === pid;
     const miniCards = Array.from({ length: Math.min(count, 10) }).map(() => `<div class="mc"></div>`).join('');
+    const copasWon = hand.tricksWonCopas[pid] ?? 0;
     return `<div class="opponent ${active ? 'active-turn' : ''}" data-anchor="player-${pid}">
       ${pid === dealerId ? dealerBadge : ''}
       <div class="name">${playerName(pid)}${isBotPlayer(pid) ? botBadge() : ''}</div>
       <div class="mini-cards">${miniCards}</div>
       <div class="cardcount">${count} cartes</div>
+      <div class="copas-count" title="Copas ramassées dans cette manche">${SUIT_SVG.copas}<span>${copasWon}</span></div>
     </div>`;
   }).join('');
 
@@ -1262,6 +1264,7 @@ function renderGame() {
         <div class="status-line ${myTurn ? 'my-turn' : ''}">${statusText}</div>
       </div>
       <div class="my-hand-wrap" data-anchor="player-${myId}">
+        <div class="copas-count my-copas-count" title="Copas ramassées dans cette manche">${SUIT_SVG.copas}<span>${hand.tricksWonCopas[myId] ?? 0}</span></div>
         ${justDrawnGhostHtml}
         <div class="my-hand ${dealingInProgress ? 'my-hand-pending' : ''}">${myHandHtml}</div>
       </div>
