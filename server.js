@@ -35,19 +35,48 @@ const rooms = {};
 
 // Bots : des joueurs comme les autres dans room.players (isBot: true), sans
 // socket réel (socketId/sessionToken null) — jamais de destinataire pour un
-// emit direct, jamais de session à reprendre. Noms à thème (rangs des
-// cartes), pour rester clairement distincts des pseudos suggérés côté client
-// (Alan, Romane, Mika, Capu).
-const BOT_NAMES = ['Bot Rei', 'Bot Dama', 'Bot Valete', 'Bot Ás'];
+// emit direct, jamais de session à reprendre. Liste de noms fixe, pour
+// rester clairement distincts des pseudos suggérés côté client (Alan,
+// Romane, Mika, Capu).
+const BOT_NAMES = ['Bot Tia', 'Bot Romaric', 'Bot Cyrano', 'Bot Rose 🕊️'];
 let botCounter = 0;
 
-function makeBot() {
+function shuffle(arr) {
+  const a = [...arr];
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
+
+// Choisit `count` noms sans répétition parmi BOT_NAMES (en excluant ceux déjà
+// utilisés dans le salon), mélangés pour ne pas toujours donner le même nom
+// au premier bot ajouté. Cas limite — plus de bots que de noms disponibles,
+// ne devrait pas arriver en pratique vu maxPlayers <= 4 — : recommence à
+// piocher dans la liste complète en suffixant d'un numéro pour éviter un
+// vrai doublon visible à l'écran.
+function pickBotNames(count, excludedNames) {
+  const pool = shuffle(BOT_NAMES.filter((n) => !excludedNames.has(n)));
+  const names = [];
+  let cycle = 1;
+  while (names.length < count) {
+    if (pool.length === 0) {
+      cycle += 1;
+      pool.push(...shuffle(BOT_NAMES).map((n) => `${n} ${cycle}`));
+    }
+    names.push(pool.shift());
+  }
+  return names;
+}
+
+function makeBot(name) {
   botCounter += 1;
   return {
     playerId: `bot-${botCounter}`,
     socketId: null,
     sessionToken: null,
-    name: BOT_NAMES[(botCounter - 1) % BOT_NAMES.length],
+    name,
     connected: true,
     isBot: true,
   };
@@ -401,8 +430,10 @@ io.on('connection', (socket) => {
     const isHost = room.players[0]?.playerId === socket.data.playerId;
     if (!isHost) return callback?.({ ok: false, error: "Seul l'hôte peut ajouter des bots." });
 
-    while (room.players.length < room.maxPlayers) {
-      room.players.push(makeBot());
+    const needed = room.maxPlayers - room.players.length;
+    const usedNames = new Set(room.players.filter((p) => p.isBot).map((p) => p.name));
+    for (const name of pickBotNames(needed, usedNames)) {
+      room.players.push(makeBot(name));
     }
 
     callback?.({ ok: true, room: publicRoomState(room) });
