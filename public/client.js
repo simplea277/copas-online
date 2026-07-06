@@ -1193,7 +1193,7 @@ function renderGame() {
   const centerRowHtml = drawPileHtml ? `<div class="trick-row">${trickHtml}${drawPileHtml}</div>` : trickHtml;
 
   const specialBanner = hand.specialPhase
-    ? `<div class="special-banner">Phase de pioche (plis 1-3) — <strong>pas d'obligation de suivre la couleur</strong>, <strong>copas interdites</strong>${hand.drawPileCount > 0 ? ` · ${hand.drawPileCount} cartes en pioche` : ''}</div>`
+    ? `<div class="special-banner">Phase de pioche — <strong>pas d'obligation de suivre la couleur</strong>, <strong>copas interdites</strong></div>`
     : '';
 
   const scoreChips = hand.players.map((pid) => {
