@@ -57,6 +57,68 @@ function hasAnyHuman(room) {
   return room.players.some((p) => !p.isBot);
 }
 
+// ----------------------------------------------------------------------------
+// Estimation du temps d'animation cliente, pour ne jamais faire jouer un bot
+// pendant qu'une animation connue (distribution, vol d'une carte posée,
+// résolution de pli...) est encore visible à l'écran des joueurs humains.
+// Le serveur ne connaît pas le DOM : ces constantes DOIVENT rester
+// approximativement synchronisées avec les durées réelles définies côté
+// client (public/client.js — STAGGER/FLIGHT/TRICK_ARRIVE_MS/etc.), mais une
+// estimation raisonnable suffit, l'objectif étant juste d'éviter qu'un coup
+// de bot ne démarre pendant qu'une animation en cours n'est pas terminée.
+// ----------------------------------------------------------------------------
+const DEAL_CARD_STAGGER_MS = 85;   // client.js: runCardsPhase STAGGER
+const DEAL_CARD_FLIGHT_MS = 320;   // client.js: runCardsPhase FLIGHT
+const DEAL_PILE_PACKETS = 4;       // client.js: runPilePhase PACKETS
+const DEAL_PILE_STAGGER_MS = 90;   // client.js: runPilePhase STAGGER
+const DEAL_PILE_FLIGHT_MS = 360;   // client.js: runPilePhase FLIGHT
+const TRICK_ARRIVE_MS = 650;       // client.js: TRICK_ARRIVE_MS (vol d'une carte posée)
+const TRICK_RESULT_DISPLAY_MS = 1400; // client.js: showResolvedTrick, délai avant flyResolvedTrickToPile
+const TRICK_PILE_STAGGER_MS = 70;  // client.js: runTrickPileAnim STAGGER
+const TRICK_PILE_FLIGHT_MS = 420;  // client.js: runTrickPileAnim FLIGHT
+const DRAW_ANIM_STAGGER_MS = 180;  // client.js: runDrawAnimPhase STAGGER
+const DRAW_ANIM_FLIGHT_MS = 512;   // client.js: runDrawAnimPhase FLIGHT
+
+/** Durée estimée de l'animation de distribution d'une nouvelle manche. */
+function dealAnimDurationMs(numPlayers, drawPileCount) {
+  const cardsPhase = numPlayers * 10 * DEAL_CARD_STAGGER_MS + DEAL_CARD_FLIGHT_MS + 120;
+  const pilePhase = (numPlayers === 3 && drawPileCount > 0)
+    ? DEAL_PILE_PACKETS * DEAL_PILE_STAGGER_MS + DEAL_PILE_FLIGHT_MS + 150
+    : 0;
+  return cardsPhase + pilePhase;
+}
+
+/**
+ * Durée estimée de la séquence déclenchée par la résolution d'un pli : vol
+ * de la dernière carte, affichage du pli résolu, puis (en parallèle) envol
+ * vers le tas des plis joués et éventuelle mini-distribution de pioche.
+ */
+function trickResolveAnimDurationMs(trickCardCount, drawnCount) {
+  const pileFly = trickCardCount * TRICK_PILE_STAGGER_MS + TRICK_PILE_FLIGHT_MS + 80;
+  const drawAnim = drawnCount > 0 ? (drawnCount * DRAW_ANIM_STAGGER_MS + DRAW_ANIM_FLIGHT_MS + 150) : 0;
+  return TRICK_ARRIVE_MS + TRICK_RESULT_DISPLAY_MS + Math.max(pileFly, drawAnim);
+}
+
+/**
+ * Repousse room.animationBusyUntil d'au moins durationMs à partir de
+ * maintenant, sans jamais le faire reculer (plusieurs animations qui se
+ * chevauchent gardent la plus tardive des deux échéances).
+ */
+function markAnimationBusy(room, durationMs) {
+  room.animationBusyUntil = Math.max(room.animationBusyUntil || 0, Date.now() + durationMs);
+}
+
+/**
+ * Délai de "réflexion" avant qu'un bot ne joue, une fois les animations en
+ * cours terminées : plus court quand un seul coup est possible (rien à
+ * choisir), plus long quand il a plusieurs options.
+ */
+function botThinkDelayMs(playableCount) {
+  if (playableCount <= 1) return 900 + Math.floor(Math.random() * 500); // 900-1400ms
+  const optionsBonus = Math.min(300, (playableCount - 1) * 60);
+  return 1500 + Math.floor(Math.random() * 1200) + optionsBonus; // ~1500-3000ms
+}
+
 function makeRoomCode() {
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // sans caractères ambigus
   let code;
@@ -118,6 +180,7 @@ function broadcastRoomState(room) {
 function startNewHand(room) {
   const playerIds = room.players.map((p) => p.playerId);
   room.currentHand = engine.dealNewHand(playerIds, room.dealerIndex);
+  markAnimationBusy(room, dealAnimDurationMs(room.currentHand.numPlayers, room.currentHand.drawPile.length));
 }
 
 function nextDealer(room) {
@@ -131,8 +194,12 @@ function isBotTurn(room) {
   return !!player?.isBot;
 }
 
-// Programme le coup automatique d'un bot après un court délai (pour ne pas
-// paraître instantané/robotique à l'écran), et rejoue la même vérification
+// Programme le coup automatique d'un bot après un délai en deux temps :
+// d'abord le temps qu'il reste avant la fin estimée des animations en cours
+// côté client (room.animationBusyUntil, pour ne jamais faire jouer le bot
+// pendant qu'une distribution/pose de carte/résolution de pli est encore
+// visible à l'écran), puis un temps de "réflexion" (botThinkDelayMs, plus
+// court s'il n'a qu'un seul coup possible). Rejoue la même vérification
 // juste avant d'agir : le salon peut avoir disparu (tout le monde parti) ou
 // la manche avoir changé entre-temps (un humain a peut-être déjà rejoué,
 // improbable mais pas impossible selon l'ordre d'arrivée des événements).
@@ -140,15 +207,20 @@ function isBotTurn(room) {
 // fonction après chaque coup, humain ou bot.
 function scheduleBotTurnIfNeeded(room) {
   if (!isBotTurn(room)) return;
-  const delay = 700 + Math.floor(Math.random() * 800); // 700-1500ms
+
+  const botId = room.currentHand.players[room.currentHand.turnIndex];
+  const playableCount = engine.getPlayableCards(room.currentHand, botId).length;
+  const animWait = Math.max(0, (room.animationBusyUntil || 0) - Date.now());
+  const delay = animWait + botThinkDelayMs(playableCount);
+
   setTimeout(() => {
     try {
       const currentRoom = rooms[room.code];
       if (!currentRoom || currentRoom !== room || !isBotTurn(currentRoom)) return;
 
-      const botId = currentRoom.currentHand.players[currentRoom.currentHand.turnIndex];
-      const card = botAI.chooseBotCard(currentRoom.currentHand, botId);
-      handleCardPlay(currentRoom, botId, card);
+      const currentBotId = currentRoom.currentHand.players[currentRoom.currentHand.turnIndex];
+      const card = botAI.chooseBotCard(currentRoom.currentHand, currentBotId);
+      handleCardPlay(currentRoom, currentBotId, card);
     } catch (err) {
       console.error('[bot] erreur inattendue:', err);
     }
@@ -181,6 +253,12 @@ function handleCardPlay(room, playerId, card) {
         myDrawnCard: result.drawnCards ? (result.drawnCards[p.playerId] || null) : null,
       });
     }
+    markAnimationBusy(room, trickResolveAnimDurationMs(result.trick.length, drawOrder ? drawOrder.length : 0));
+  } else {
+    // Carte posée qui ne conclut pas le pli : les autres clients l'animent
+    // en vol depuis la main du joueur jusqu'à son emplacement (voir
+    // TRICK_ARRIVE_MS côté client).
+    markAnimationBusy(room, TRICK_ARRIVE_MS);
   }
 
   if (result.handOver) {
@@ -270,6 +348,7 @@ io.on('connection', (socket) => {
       dealerIndex: 0,
       scores: null,
       currentHand: null,
+      animationBusyUntil: 0,
     };
     rooms[code] = room;
     socket.join(code);
