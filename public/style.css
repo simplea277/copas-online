@@ -381,11 +381,13 @@ button.secondary {
 
 .special-banner {
   text-align: center;
-  font-size: 0.78rem;
+  font-size: 0.64rem;
+  line-height: 1.3;
+  max-width: 320px;
   background: rgba(27,94,122,0.35);
   border: 1px solid var(--azulejo-light);
-  border-radius: 10px;
-  padding: 6px 10px;
+  border-radius: 8px;
+  padding: 4px 8px;
   color: var(--ivory);
 }
 .special-banner strong { color: var(--gold); }
