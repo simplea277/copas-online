@@ -265,7 +265,6 @@ button.secondary {
   box-shadow: 0 0 0 2px var(--gold);
 }
 .opponent .name { font-size: 0.78rem; font-weight: 600; }
-.opponent .cardcount { font-size: 0.7rem; color: var(--ivory-dim); }
 .opponent .mini-cards { display: flex; }
 .opponent .mini-cards .mc {
   width: 10px; height: 14px;
@@ -279,7 +278,7 @@ button.secondary {
 /* Compteur de copas ramassées dans la MANCHE EN COURS (hand.tricksWonCopas)
    — distinct du score total de la partie déjà affiché dans .score-chip.
    Même icône SVG que sur les cartes (SUIT_SVG.copas dans client.js),
-   jamais un emoji cœur. Taille discrète, cohérente avec .cardcount. */
+   jamais un emoji cœur. Taille discrète, cohérente avec le reste du chip. */
 .copas-count {
   display: flex;
   align-items: center;
