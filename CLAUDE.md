@@ -11,7 +11,12 @@ utilisateur — ce fichier-ci est pour la reprise du développement.
 **État actuel : fonctionnel et déployé.** Plusieurs parties complètes (3 et 4
 joueurs, jusqu'à la fin à 30 points) ont été jouées et testées en conditions
 réelles par l'utilisateur, avec plusieurs bugs trouvés et corrigés en cours de
-route (détails plus bas).
+route (détails plus bas). Depuis, un mode joueurs bots (voir plus bas) a été
+ajouté et testé (parties solo + parties mixtes humains/bots complètes), ainsi
+qu'une section règles du jeu, des animations supplémentaires (pose de carte
+avec nom du joueur, tas des plis joués) et plusieurs corrections successives
+des animations de pioche. Tout est testé et confirmé fonctionnel par
+l'utilisateur à la date du 2026-07-06, sauf mention contraire ci-dessous.
 
 ## Stack et architecture
 
@@ -89,12 +94,55 @@ route (détails plus bas).
     autres). Ma carte piochée s'affiche ~2,2s face visible au-dessus de ma
     main (`.just-drawn-ghost`) avant de s'intégrer lentement (~1s) avec un
     halo doré (`.pcard.just-drawn`) — timings réglés sur plusieurs allers-
-    retours avec l'utilisateur, à retoucher si retour "pas parfait" sans
-    précision (dernier état connu : fonctionnel mais peut-être encore à
-    affiner, voir avec l'utilisateur ce qui cloche exactement avant de
-    retoucher au hasard).
+    retours avec l'utilisateur. Le dernier souci connu sur cette animation
+    (un flash parasite de la carte dans la main juste avant le ghost, voir
+    bug corrigé plus bas) est réglé et confirmé par l'utilisateur.
   - Badge donneur (`.dealer-badge`, jeton doré "D") sur l'opponent-chip ou le
     score-chip de `hand.players[hand.dealerIndex]`, recalculé à chaque rendu.
+- **Animation de pose de carte dans le pli en cours** (`beginTrickCardArrival`
+  dans `client.js`) : chaque carte jouée (la mienne comme celles des
+  adversaires) vole visuellement depuis la position du joueur qui l'a posée
+  (`data-anchor="player-X"`, déjà posé sur `.opponent`/`.my-hand-wrap`)
+  jusqu'à son emplacement dans `.trick-slots`, plutôt que d'apparaître
+  instantanément (~650ms, cf. `TRICK_ARRIVE_MS`). Contrairement aux autres
+  vols du projet (clones indépendants dans `#deal-anim-layer`), celle-ci est
+  rendue **directement à sa place** dans la grille, animée par un
+  `@keyframes` CSS paramétré par carte via des variables CSS
+  (`--arrive-dx`/`--arrive-dy`) + un `animation-delay` négatif basé sur le
+  temps écoulé (même principe que `.just-drawn-ghost`) : nécessaire pour
+  survivre à un `render()` intercurrent (un autre joueur qui joue pendant que
+  celle-ci vole encore) sans jamais disparaître puis réapparaître (voir bug
+  corrigé plus bas). Le nom du joueur s'affiche au-dessus de chaque carte
+  (`renderTrickSlot`) tant que le pli reste visible au centre, qu'il soit en
+  cours de constitution ou déjà résolu (juste avant l'envol vers le tas des
+  plis joués).
+- **Tas des "plis joués" animé** (`.trick-pile-stack`, `runTrickPileAnim`) :
+  widget discret sur le bord droit qui grossit au fil de la manche, avec un
+  effet de pile négligée (rotation/décalage aléatoires par carte, voir
+  `.trick-pile-stack .trick-pile-card` dans `style.css`) plutôt que des dos
+  de carte parfaitement alignés. Un clic affiche le dernier pli résolu (les
+  vraies cartes + le gagnant), un second clic referme.
+- **Mode joueurs bots** (`game/botAI.js` + `server.js`) : un salon peut être
+  complété avec des bots (bouton "Compléter avec des bots" dans la salle
+  d'attente, événement `room:fillBots`) ou lancé directement en solo contre
+  l'ordinateur. `chooseBotCard(hand, playerId)` implémente une heuristique
+  simple (jamais de coup illégal, testé par simulation dans
+  `botAI.test.js`) : évite les copas à l'ouverture, gère différemment un pli
+  "dangereux" (contient des copas) selon qu'il peut ou non éviter de le
+  gagner, défausse la copa la plus haute quand il ne peut pas suivre. Le coup
+  d'un bot est différé d'un délai aléatoire de **700 à 1500ms**
+  (`scheduleBotTurnIfNeeded`) pour ne pas paraître instantané/robotique à
+  l'écran — ce rythme a été ajusté après retour utilisateur et semble
+  maintenant satisfaisant. `handleCardPlay` (factorisé) gère aussi bien un
+  coup humain (`game:playCard`) qu'un coup de bot, et rappelle
+  `scheduleBotTurnIfNeeded` après chaque coup pour enchaîner naturellement
+  d'un bot au suivant.
+- **Section "Règles du jeu"** (`renderRulesOverlay` dans `client.js`) :
+  overlay accessible depuis l'accueil (onglets 3/4 joueurs, celui à 3 actif
+  par défaut) et depuis une partie en cours (version correspondant au nombre
+  de joueurs réel de la manche, sans onglets). Contenu verbatim fourni par
+  l'utilisateur (`RULES_INTRO_HTML`, `RULES_3P_HTML`, `RULES_4P_HTML`),
+  incluant les noms portugais des figures (Dama/Rei).
 
 ## Bugs corrigés (et pourquoi, pour éviter de les réintroduire)
 
@@ -132,6 +180,54 @@ route (détails plus bas).
    `hand:update` quand `room.currentHand` est vide, + garde-fous côté client
    (`room:update`/`hand:update` ne doivent pas écraser un résultat de fin de
    partie en cours d'affichage).
+6. **Repop/redémarrage de l'animation de la carte piochée ("double
+   apparition").** `render()` régénère tout le `innerHTML` à chaque
+   changement d'état (tour d'un adversaire, fin d'un envol...), ce qui
+   remontait l'élément `.just-drawn-ghost`/`.pcard.just-drawn` et relançait
+   son animation CSS depuis 0% à chaque fois. Corrigé en pilotant l'entrée
+   par une fenêtre de temps précise (`justDrawnStageStartedAt`) avec
+   `animation-delay` négatif pour reprendre au bon endroit si un `render()`
+   intercurrent recrée l'élément en plein vol.
+7. **Clignotement du compteur de pioche + décompte non séquencé.** Le
+   compteur (phase des 3 premiers plis, 3 joueurs) sautait à sa valeur finale
+   dès l'arrivée de `hand:update` (déjà décrémenté côté serveur), puis
+   "revenait en arrière" le temps de l'animation avant de reconverger — un
+   va-et-vient au lieu d'une transition propre. Corrigé en figeant
+   l'affichage dès `game:trickResolved` (pas seulement au démarrage de
+   l'animation 1400ms plus tard) et en décrémentant carte par carte en phase
+   avec le vol de chaque carte. Ajout d'un id de séquence
+   (`pendingDrawAnimId`) posé dès `trickResolved` : si un pli s'enchaîne plus
+   vite que la séquence d'animation du précédent (~2,6s, arrive vite avec des
+   bots ou joueurs rapides), l'ancienne séquence se détecte périmée et
+   s'arrête proprement au lieu de continuer à décrémenter un compteur qui ne
+   lui appartient plus. Ce même pattern d'id de séquence a ensuite servi de
+   modèle pour les bugs 8 et 9 ci-dessous.
+8. **Flash parasite de la carte piochée dans la main avant son animation
+   ghost.** `hand:update` (carte déjà dans `myHand` côté serveur) arrivait et
+   se rendait avant que le code d'animation ne prenne le relais : la carte
+   piochée s'affichait donc brièvement mélangée aux autres cartes de la
+   main, disparaissait, puis l'animation de vol se relançait correctement.
+   Corrigé en ajoutant un stade intermédiaire `'pending'` posé immédiatement
+   dans le handler `game:trickResolved` (la carte est retirée de la main dès
+   cet instant, rien affiché à la place) plutôt que d'attendre `startDrawAnim`
+   1400ms plus tard.
+9. **Disparition parasite des cartes du pli pendant l'animation de pose de
+   carte.** Introduit par la fonctionnalité elle-même (voir plus haut) : la
+   carte volante vivait d'abord en clone externe dans `#deal-anim-layer`,
+   une couche entièrement régénérée à chaque `render()`. Si un autre joueur
+   posait sa carte pendant qu'une carte précédente était encore en vol, son
+   clone se faisait détruire en plein vol pendant que la vraie carte restait
+   cachée, jusqu'à ce que son propre minuteur la révèle bien plus tard — les
+   autres cartes du pli disparaissaient donc un instant avant de réapparaître.
+   Corrigé en rendant la carte qui arrive directement à sa place dans
+   `.trick-slots` (voir plus haut), plus deux bugs connexes découverts en
+   creusant : un filtrage par `hand.tricksPlayed` qui changeait de valeur
+   avant la fin de l'animation de la dernière carte d'un pli (basculé sur un
+   filtrage par index seul), et les N-1 autres cartes déjà posées qui se
+   fiaient à `hand.currentTrick` (déjà vidé à ce moment-là) — figé désormais
+   via `state.trickBeingResolved`. Confirmé résolu par l'utilisateur en test
+   réel (2026-07-06) ; un cas résiduel plus rare persiste sous stress-test
+   avec bots très rapides, voir section suivante.
 
 ## Ce qu'il reste à faire / à surveiller
 
@@ -158,13 +254,43 @@ route (détails plus bas).
 - **Vérifier que l'auto-deploy Render est bien actif** avant de pousser en
   supposant que ça se redéploie tout seul (sinon : Manual Deploy dans le
   dashboard Render).
-- **Animation de mise en évidence de la carte piochée (fin de pli 1-3, voir
-  plus haut) : dernier retour utilisateur "pas parfait" sans plus de détail**,
-  juste avant qu'il n'aille se coucher (2026-07-04). Les timings ont déjà été
-  ajustés deux fois (durée d'affichage, vitesse d'intégration) suite à ses
-  retours précédents. À reprendre en lui demandant précisément ce qui ne va
-  pas (position ? vitesse ? lisibilité ? autre chose ?) plutôt que de
-  retoucher au hasard.
+- **Cas résiduel rare sur l'animation de pose de carte (bug 9 ci-dessus) :**
+  sous stress-test avec des bots jouant à un rythme très rapide et régulier
+  (300ms-1,4s, sans pause humaine), une carte du pli peut encore parfois
+  disparaître brièvement (~300-650ms) avant de réapparaître, le plus souvent
+  juste au moment où un pli se résout et que le suivant démarre. Cause
+  exacte non identifiée malgré une investigation poussée (plusieurs
+  hypothèses corrigées en cours de route, voir bug 9). **Confirmé résolu par
+  l'utilisateur en conditions de jeu réelles** (rythme humain, 2026-07-06) ;
+  à ne rouvrir que si ça revient en usage réel, en repartant du principe que
+  le déclencheur est un chevauchement entre la fenêtre d'affichage du pli
+  résolu (1400ms) et le pli suivant qui démarre côté serveur avant qu'elle
+  ne soit passée côté client.
+- **Chantier "historique des parties" (base de données) : pas encore
+  commencé.** Voir section "Prochaines étapes" ci-dessous — actuellement
+  aucune trace de Supabase ni de persistance dans le code (`grep -ri
+  supabase` ne remonte que ce fichier). Le projet reste 100% en mémoire
+  (voir plus haut) tant que ce chantier n'a pas démarré.
+
+## Prochaines étapes prévues
+
+- **Historique des parties persistant.** Actuellement, tout est en mémoire
+  et perdu au moindre redémarrage serveur (voir plus haut) — aucune partie
+  jouée n'est conservée nulle part une fois terminée. Idée évoquée par
+  l'utilisateur : une base de données Supabase pour garder trace des parties
+  passées (scores, date, joueurs) et pouvoir les consulter plus tard. Pas
+  encore commencé : à cadrer avec l'utilisateur (quelles infos garder par
+  partie/par manche ? consultable par qui — seulement les joueurs de la
+  partie, ou une liste globale ?) avant d'introduire une dépendance externe
+  (compte Supabase, clé API, schéma de table) dans un projet qui n'en a
+  aucune aujourd'hui.
+- **Section "histoire du site" avec photos.** Une page/section à ajouter
+  (accueil ou séparée) racontant l'histoire du projet, avec des photos —
+  contenu et emplacement exact à définir avec l'utilisateur le moment venu.
+- **Autres retouches visuelles éventuelles**, au fil des retours de
+  l'utilisateur en conditions de jeu réelles (ce projet avance surtout par
+  petites itérations ciblées après une session de jeu, plutôt que par de
+  grosses refontes planifiées à l'avance).
 
 ## Comment tester
 
