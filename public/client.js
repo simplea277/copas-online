@@ -1199,7 +1199,6 @@ function renderGame() {
   const scoreChips = hand.players.map((pid) => {
     const s = room.scores?.[pid] || { real: 0, suspended: 0 };
     return `<div class="score-chip ${pid === myId ? 'me' : ''}">
-      ${pid === dealerId ? dealerBadge : ''}
       ${s.suspended > 0 ? `<div class="suspended-float">${s.suspended} en suspens</div>` : ''}
       <div class="name">${playerName(pid)}${isBotPlayer(pid) ? botBadge() : ''}</div>
       <div class="real">${s.real}</div>
