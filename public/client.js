@@ -1274,13 +1274,11 @@ function renderGame() {
         ${centerRowHtml}
         <div class="status-line ${myTurn ? 'my-turn' : ''}">${statusText}</div>
       </div>
-      <div class="my-hand-wrap ${myTurn ? 'my-turn' : ''}" data-anchor="player-${myId}">
+      <div class="my-hand-wrap" data-anchor="player-${myId}">
         <div class="copas-count my-copas-count" title="Copas ramassées dans cette manche">${SUIT_SVG.copas}<span>+${hand.tricksWonCopas[myId] ?? 0}</span></div>
         <button class="my-sort-toggle-btn" id="btn-sort-toggle" title="${state.handSortDesc ? 'Trier par force croissante' : 'Trier par force décroissante'}" aria-label="Inverser le sens de tri des cartes">Tri</button>
         ${justDrawnGhostHtml}
-        <div class="my-hand-frame">
-          <div class="my-hand ${dealingInProgress ? 'my-hand-pending' : ''}">${myHandHtml}</div>
-        </div>
+        <div class="my-hand ${dealingInProgress ? 'my-hand-pending' : ''}">${myHandHtml}</div>
       </div>
     </div>
     ${renderHandOverOverlay()}

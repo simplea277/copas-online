@@ -22,12 +22,14 @@ rythme des bots ralenti et synchronisé avec les animations, noms de bots fixes
 adversaires), bouton pour inverser le sens de tri de la main, boutons
 "Quitter"/"Règles" compactés en icônes harmonisées, bannière "phase de
 pioche" allégée, correctif `100dvh` pour la barre d'adresse Safari sur
-iPhone. Le 2026-07-09, un halo doré pulsant a été ajouté autour de ma main
-quand c'est mon tour (voir décisions techniques ci-dessous) ; une vibration
-du téléphone à cette même occasion avait été ajoutée puis entièrement
-retirée sur demande de l'utilisateur. Tout est testé et confirmé
-fonctionnel par l'utilisateur à ces dates, sauf mention contraire
-ci-dessous.
+iPhone. Le 2026-07-09, plusieurs pistes ont été essayées pour rendre mon
+tour plus visible (halo autour de ma main, puis halo autour du contour de
+l'écran, vibration du téléphone au passage de tour) avant d'être
+entièrement abandonnées sur demande de l'utilisateur, qui a préféré revenir
+à l'indicateur d'origine (bordure dorée simple sur les cartes jouables +
+message de statut texte) — voir "Fausses pistes essayées puis abandonnées"
+ci-dessous. Tout est testé et confirmé fonctionnel par l'utilisateur à ces
+dates, sauf mention contraire ci-dessous.
 
 ## Stack et architecture
 
@@ -202,31 +204,25 @@ ci-dessous.
 - **`100dvh` (avec repli `100vh`) sur `#app`** (`style.css`) : `100vh` seul
   ne tient pas compte de la barre d'adresse Safari sur iPhone, provoquant un
   défilement vertical parasite quand elle apparaît/disparaît au scroll.
-- **Halo doré pulsant autour de ma main quand c'est mon tour** (`myTurn`,
-  classe `.my-turn` posée sur `.my-hand-wrap` dans `renderGame()`) : le halo
-  lui-même est porté par un cadre intermédiaire `.my-hand-frame` (nouveau
-  wrapper autour de `.my-hand` uniquement, pas de `.copas-count`/bouton
-  "Tri" qui restent en dehors) plutôt que par `.my-hand-wrap` directement.
-  Nécessaire car `.my-hand-wrap` est étiré par son parent flex
-  (`.table-wrap`) sur toute la largeur de l'écran, bien plus large que les
-  cartes réellement affichées dès que la main se vide en cours de manche —
-  un halo posé dessus débordait donc largement des cartes au lieu d'épouser
-  leur silhouette. `.my-hand-frame` a `width: fit-content` pour se limiter à
-  la largeur réelle du contenu. `overflow-x: auto` reste volontairement
-  porté par `.my-hand` (le filet de sécurité existant pour les cas extrêmes
-  de zoom/mise à l'échelle) et non par `.my-hand-frame` : un élément avec
-  overflow non-visible rogne aussi son propre `box-shadow`, ce qui aurait
-  recréé une bordure nette plutôt qu'un halo diffus. Le halo lui-même est
-  composé de 3 `box-shadow` superposées à flou/étalement/opacité croissants
-  (`myTurnGlow` dans `style.css`, teinte `--gold-rgb` ajoutée à côté de
-  `--gold` pour permettre l'opacité variable) plutôt qu'une seule ombre à
-  bord net, avec une pulsation douce en boucle. Disparaît immédiatement dès
-  que ce n'est plus mon tour (pas de transition de sortie). Respecte
-  `prefers-reduced-motion` (halo fixe à mi-intensité, sans pulsation,
-  plutôt que rien du tout). Une vibration du téléphone au moment du passage
-  de tour avait été ajoutée en même temps que ce halo puis entièrement
-  retirée sur demande explicite de l'utilisateur (aucune trace de code
-  résiduelle) — à ne pas réintroduire sans qu'il ne le redemande.
+
+## Fausses pistes essayées puis abandonnées
+
+- **Halo lumineux doré pour indiquer mon tour (myTurn).** Le 2026-07-09,
+  plusieurs variantes ont été essayées en session pour renforcer
+  l'indicateur visuel de tour au-delà de la bordure dorée déjà présente sur
+  les cartes jouables : halo diffus autour de la zone de ma main
+  (`.my-hand-wrap`, puis un cadre `.my-hand-frame` dédié pour coller à la
+  largeur réelle des cartes plutôt qu'à la largeur pleine écran), puis halo
+  diffus autour de tout le contour de l'écran (`.turn-glow-overlay`, en
+  `box-shadow` inset plein viewport). Une vibration du téléphone au moment
+  du passage de tour a aussi été essayée à la même occasion. **Toutes ces
+  pistes ont été entièrement retirées sur demande explicite de
+  l'utilisateur** (aucune trace de code résiduelle, vérifié par diff avec le
+  commit d'avant ce chantier) — l'indicateur de tour reste donc uniquement
+  la bordure dorée sur `.my-hand .pcard.playable` + le message de statut
+  texte ("À toi de jouer !" / "Au tour de X…"), comme avant cette session.
+  À ne pas réintroduire une variante similaire sans que l'utilisateur ne le
+  redemande explicitement.
 
 ## Bugs corrigés (et pourquoi, pour éviter de les réintroduire)
 

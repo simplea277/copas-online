@@ -6,7 +6,6 @@
   --azulejo: #1b5e7a;
   --azulejo-light: #2d7a9c;
   --gold: #c89b3c;
-  --gold-rgb: 200, 155, 60; /* même teint que --gold, en triplet rgb pour les halos/box-shadow avec opacité variable */
   --copas: #8b2635;
   --copas-bright: #ff6b6b; /* rouge vif, pour rester lisible sur le tapis vert (contrairement à --copas, pensé pour l'ivoire des cartes) */
   --ink: #1a2420;
@@ -631,70 +630,6 @@ button.secondary {
   flex-direction: column;
   gap: 10px;
 }
-
-/* Cadre intermédiaire, ajouté spécifiquement pour porter le halo de tour
-   (voir plus bas) : .my-hand-wrap est étiré par son parent flex (.table-wrap)
-   sur toute la largeur de l'écran, bien plus large que les cartes réellement
-   affichées dès que la main se vide au fil de la manche — un halo posé
-   directement dessus formait donc un bloc qui débordait largement de part et
-   d'autre des cartes au lieu d'épouser leur silhouette. .my-hand-frame se
-   contente donc de la largeur réelle de son contenu (width: fit-content) et
-   se centre, pour que le halo colle précisément à la zone visible des
-   cartes quel que soit leur nombre. overflow-x: auto reste porté par
-   .my-hand (pas par ce cadre) : un élément avec overflow non-visible
-   rogne aussi son PROPRE box-shadow, ce qui aurait recréé une ligne nette au
-   lieu d'un halo diffus — .my-hand-frame lui-même n'a donc aucun overflow
-   défini, seul .my-hand (à l'intérieur) garde ce filet de sécurité pour les
-   cas extrêmes (zoom navigateur, mise à l'échelle Windows) où le contenu
-   dépasserait quand même max-width: 100%. */
-.my-hand-frame {
-  position: relative;
-  width: fit-content;
-  max-width: 100%;
-  margin: 0 auto;
-  border-radius: 20px;
-}
-
-/* Halo doré pulsant autour de ma main quand c'est mon tour (myTurn côté
-   client, classe .my-turn posée sur .my-hand-wrap, halo porté par le cadre
-   .my-hand-frame qu'il contient — voir plus haut pour pourquoi). Reprend le
-   ton --gold déjà utilisé partout ailleurs (cartes jouables, badge
-   donneur...) et le même esprit de pulsation douce continue que
-   .suspended-float. Plusieurs box-shadow superposées, à flou/étalement/
-   opacité croissants du centre vers l'extérieur, plutôt qu'une seule ombre
-   nette : ça donne un dégradé lumineux qui s'estompe progressivement au lieu
-   d'une bordure à arête vive. Disparaît immédiatement dès que la classe
-   .my-turn est retirée (pas de transition de sortie demandée : dès que ce
-   n'est plus mon tour, le halo doit partir tout de suite, pas s'estomper). */
-.my-hand-wrap.my-turn .my-hand-frame {
-  animation: myTurnGlow 2.2s ease-in-out infinite;
-}
-@keyframes myTurnGlow {
-  0%, 100% {
-    box-shadow:
-      0 0 10px 2px rgba(var(--gold-rgb), 0.6),
-      0 0 26px 10px rgba(var(--gold-rgb), 0.4),
-      0 0 48px 20px rgba(var(--gold-rgb), 0.22);
-  }
-  50% {
-    box-shadow:
-      0 0 16px 4px rgba(var(--gold-rgb), 0.85),
-      0 0 40px 16px rgba(var(--gold-rgb), 0.6),
-      0 0 70px 30px rgba(var(--gold-rgb), 0.32);
-  }
-}
-@media (prefers-reduced-motion: reduce) {
-  /* Pas d'animation, mais le halo doit rester visible (indication de tour),
-     pas disparaître complètement : halo fixe, à mi-intensité entre les deux
-     bornes de la pulsation ci-dessus. */
-  .my-hand-wrap.my-turn .my-hand-frame {
-    animation: none;
-    box-shadow:
-      0 0 13px 3px rgba(var(--gold-rgb), 0.72),
-      0 0 33px 13px rgba(var(--gold-rgb), 0.5),
-      0 0 59px 25px rgba(var(--gold-rgb), 0.27);
-  }
-}
 .my-hand {
   display: flex;
   justify-content: center;
@@ -773,6 +708,7 @@ button.secondary {
 }
 .my-hand .pcard:first-child { margin-left: 0; }
 .my-hand .pcard.playable:active { transform: translateY(-10px); }
+.my-hand .pcard.playable { box-shadow: 0 3px 8px var(--shadow), 0 0 0 2px var(--gold); }
 .my-hand .pcard.unplayable { opacity: 0.4; filter: grayscale(0.6); }
 
 /* Carte tout juste piochée (fin de pli 1-3, 3 joueurs) — apparaît d'abord
