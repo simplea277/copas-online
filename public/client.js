@@ -1139,7 +1139,7 @@ function renderGame() {
   let statusText;
   if (state.trickResult) {
     const slots = state.trickResult.trick.map((e) => renderTrickSlot(e)).join('');
-    trickHtml = `<div class="trick-slots">${slots}</div>`;
+    trickHtml = `<div class="trick-slots trick-slots-${hand.numPlayers}">${slots}</div>`;
     statusText = `${playerName(state.trickResult.winnerId)} remporte le pli` +
       (state.trickResult.copasInTrick > 0 ? ` (+${state.trickResult.copasInTrick} ${SUIT_SVG.copas})` : '');
   } else {
@@ -1175,7 +1175,7 @@ function renderGame() {
       if (pending?.phase === 'flying') return renderTrickSlot(pending.entry, pending);
       return renderTrickSlot(liveTrick[i] || null);
     }).join('');
-    trickHtml = `<div class="trick-slots">${slots}</div>`;
+    trickHtml = `<div class="trick-slots trick-slots-${hand.numPlayers}">${slots}</div>`;
     statusText = myTurnEasterEgg ? 'À toi de jouer Capucine !!!' : myTurn ? 'À toi de jouer !' : `Au tour de ${playerName(hand.turnPlayerId)}…`;
   }
 

@@ -321,13 +321,19 @@ button.secondary {
   justify-content: center;
 }
 
+/* Nombre de colonnes déterminé par hand.numPlayers côté client (classe
+   .trick-slots-3 / .trick-slots-4 posée dans renderGame(), voir client.js) :
+   toutes les cartes du pli en cours doivent tenir sur une seule ligne, quel
+   que soit le nombre de joueurs, plutôt qu'un nombre de colonnes fixe à 3
+   qui renvoyait la 4e carte à la ligne suivante en partie à 4 joueurs. */
 .trick-slots {
   display: grid;
-  grid-template-columns: repeat(3, 56px);
   grid-auto-rows: auto; /* le nom au-dessus de chaque carte (.trick-slot) fait varier la hauteur */
   gap: 10px 6px;
   justify-content: center;
 }
+.trick-slots.trick-slots-3 { grid-template-columns: repeat(3, 56px); }
+.trick-slots.trick-slots-4 { grid-template-columns: repeat(4, 56px); }
 /* Un emplacement du pli en cours : nom du joueur au-dessus de sa carte
    (renderTrickSlot). Toujours présent (même vide, via &nbsp;) pour que
    tous les emplacements gardent la même hauteur, joué ou non. */
