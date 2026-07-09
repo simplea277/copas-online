@@ -15,8 +15,19 @@ route (détails plus bas). Depuis, un mode joueurs bots (voir plus bas) a été
 ajouté et testé (parties solo + parties mixtes humains/bots complètes), ainsi
 qu'une section règles du jeu, des animations supplémentaires (pose de carte
 avec nom du joueur, tas des plis joués) et plusieurs corrections successives
-des animations de pioche. Tout est testé et confirmé fonctionnel par
-l'utilisateur à la date du 2026-07-06, sauf mention contraire ci-dessous.
+des animations de pioche. Une session de retouches UI/UX supplémentaire a
+suivi le 2026-07-06 (voir décisions techniques ci-dessous pour le détail) :
+rythme des bots ralenti et synchronisé avec les animations, noms de bots fixes
+(Tia/Romaric/Cyrano/Rose), compteur de copas de la manche en cours (moi +
+adversaires), bouton pour inverser le sens de tri de la main, boutons
+"Quitter"/"Règles" compactés en icônes harmonisées, bannière "phase de
+pioche" allégée, correctif `100dvh` pour la barre d'adresse Safari sur
+iPhone. Le 2026-07-09, un halo doré pulsant a été ajouté autour de ma main
+quand c'est mon tour (voir décisions techniques ci-dessous) ; une vibration
+du téléphone à cette même occasion avait été ajoutée puis entièrement
+retirée sur demande de l'utilisateur. Tout est testé et confirmé
+fonctionnel par l'utilisateur à ces dates, sauf mention contraire
+ci-dessous.
 
 ## Stack et architecture
 
@@ -60,9 +71,23 @@ l'utilisateur à la date du 2026-07-06, sauf mention contraire ci-dessous.
   CSS (`--suit-espadas`, `--suit-copas`, `--suit-ouros`, `--suit-paus`) dans
   `style.css`, cohérentes avec le thème vert tapis / or / ivoire.
 - **Tri de la main côté client uniquement** (`sortHand()` dans `client.js`) :
-  copas → ouros → espadas → paus, force croissante dans chaque enseigne. Le
-  moteur ne trie rien ; c'est purement un tri d'affichage sur `hand.myHand`
-  avant rendu.
+  copas → ouros → espadas → paus (ordre des enseignes toujours fixe), force
+  croissante ou décroissante dans chaque enseigne selon `state.handSortDesc`.
+  Le moteur ne trie rien ; c'est purement un tri d'affichage sur
+  `hand.myHand` avant rendu. Bascule via le bouton "Tri" (`#btn-sort-toggle`,
+  au-dessus à gauche de `.my-hand-wrap`) ; préférence mémorisée dans
+  `localStorage` (`copas:handSortDesc`), volontairement absente de la remise
+  à zéro de `leaveGame()` pour persister entre parties/rechargements. Le
+  bouton est en miroir exact du compteur de copas de la manche en cours
+  (voir plus bas) — même ligne, même boîte visuelle (`.my-copas-count` /
+  `.my-sort-toggle-btn` partagent les mêmes valeurs de padding/bordure/
+  arrondi/taille de police dans `style.css`) : si l'un des deux est retouché
+  visuellement, l'autre doit suivre pour rester assorti. **Piège déjà
+  rencontré une fois** : lors d'une harmonisation, le style du bouton "Tri"
+  a été appliqué par erreur au compteur de copas au lieu de l'inverse — la
+  référence stylistique du couple, c'est le compteur de copas (petit badge
+  compact, coins à 10px, padding 2px 7px sauf le padding horizontal du
+  bouton "Tri" élargi à 13px pour que le texte respire), pas le bouton.
 - **Fin de manche anticipée dès que les 10 copas ont toutes été jouées**
   (`engine.js`, `resolveTrick()`) : plus besoin d'attendre que toutes les
   mains soient vides si le score est déjà scellé. `result.earlyEnd` distingue
@@ -129,20 +154,79 @@ l'utilisateur à la date du 2026-07-06, sauf mention contraire ci-dessous.
   simple (jamais de coup illégal, testé par simulation dans
   `botAI.test.js`) : évite les copas à l'ouverture, gère différemment un pli
   "dangereux" (contient des copas) selon qu'il peut ou non éviter de le
-  gagner, défausse la copa la plus haute quand il ne peut pas suivre. Le coup
-  d'un bot est différé d'un délai aléatoire de **700 à 1500ms**
-  (`scheduleBotTurnIfNeeded`) pour ne pas paraître instantané/robotique à
-  l'écran — ce rythme a été ajusté après retour utilisateur et semble
-  maintenant satisfaisant. `handleCardPlay` (factorisé) gère aussi bien un
-  coup humain (`game:playCard`) qu'un coup de bot, et rappelle
-  `scheduleBotTurnIfNeeded` après chaque coup pour enchaîner naturellement
-  d'un bot au suivant.
+  gagner, défausse la copa la plus haute quand il ne peut pas suivre.
+  - **Noms fixes, piochés sans doublon** : `BOT_NAMES` dans `server.js` =
+    `['Bot Tia', 'Bot Romaric', 'Bot Cyrano', 'Bot Rose 🕊️']` (liste demandée
+    par l'utilisateur, y compris l'emoji colombe sur "Rose"). `pickBotNames()`
+    mélange les noms non déjà utilisés dans le salon et les distribue un par
+    un ; repli (concaténation d'un numéro) si jamais plus de bots que de noms
+    sont nécessaires (cas qui ne devrait pas arriver vu `maxPlayers` ≤ 4).
+  - **Rythme en deux temps** (`scheduleBotTurnIfNeeded`) : d'abord le temps
+    qu'il reste avant la fin estimée des animations client en cours
+    (`room.animationBusyUntil`, mis à jour par `markAnimationBusy()` à
+    chaque distribution/pose de carte/résolution de pli — durées calquées
+    sur les constantes réelles de `client.js`, voir `dealAnimDurationMs()`/
+    `trickResolveAnimDurationMs()` dans `server.js`), puis un temps de
+    réflexion (`botThinkDelayMs`) de **900-1400ms** si un seul coup est
+    possible, sinon **~1500-3000ms**. Remplace l'ancien délai fixe
+    (700-1500ms sans lien avec les animations), qui pouvait faire jouer un
+    bot pendant qu'une animation cliente n'était pas terminée. `handleCardPlay`
+    (factorisé) gère aussi bien un coup humain (`game:playCard`) qu'un coup
+    de bot, et rappelle `scheduleBotTurnIfNeeded` après chaque coup pour
+    enchaîner naturellement d'un bot au suivant.
 - **Section "Règles du jeu"** (`renderRulesOverlay` dans `client.js`) :
   overlay accessible depuis l'accueil (onglets 3/4 joueurs, celui à 3 actif
   par défaut) et depuis une partie en cours (version correspondant au nombre
   de joueurs réel de la manche, sans onglets). Contenu verbatim fourni par
   l'utilisateur (`RULES_INTRO_HTML`, `RULES_3P_HTML`, `RULES_4P_HTML`),
   incluant les noms portugais des figures (Dama/Rei).
+- **Compteur de copas de la manche en cours** (`hand.tricksWonCopas`, déjà
+  calculé côté serveur, remis à zéro à chaque nouvelle manche) : affiché
+  pour moi (`.my-copas-count`, au-dessus à droite de `.my-hand-wrap`) et
+  pour chaque adversaire (`.copas-count` dans son `.opponent` chip), au
+  format `+X` avec l'icône SVG `SUIT_SVG.copas` (jamais un emoji cœur).
+  Couleur dédiée `--copas-bright` (`#ff6b6b`, rouge vif) plutôt que `--copas`
+  (rouge brique pensé pour l'ivoire des cartes, peu lisible sur le tapis
+  vert). Le nombre de cartes en main des adversaires (`X cartes`) a été
+  retiré de leur chip à la même occasion (jugé peu utile).
+- **Boutons "Quitter"/"Règles" compactés en icônes** (`.hud-btn`/
+  `.hud-btn-face` dans `style.css`) : croix ✕ et libellé "Règles" dans des
+  pilules de même échelle (34px de haut), chacune portée par un élément
+  `<button>` de 40x40px minimum (zone tactile mobile) contenant une face
+  visuelle plus petite centrée dedans. Le bouton "Quitter" n'est pas rendu
+  du tout tant que l'overlay des règles est ouvert (évite qu'il reste
+  cliquable par-dessus). `.table-wrap` a un `padding-top: 60px` calé pour
+  que la rangée de score-chips (et le badge donneur qui déborde de 8px
+  au-dessus du chip concerné) passe toujours sous ces boutons fixes, y
+  compris à 4 joueurs où les chips s'étalent davantage.
+- **`100dvh` (avec repli `100vh`) sur `#app`** (`style.css`) : `100vh` seul
+  ne tient pas compte de la barre d'adresse Safari sur iPhone, provoquant un
+  défilement vertical parasite quand elle apparaît/disparaît au scroll.
+- **Halo doré pulsant autour de ma main quand c'est mon tour** (`myTurn`,
+  classe `.my-turn` posée sur `.my-hand-wrap` dans `renderGame()`) : le halo
+  lui-même est porté par un cadre intermédiaire `.my-hand-frame` (nouveau
+  wrapper autour de `.my-hand` uniquement, pas de `.copas-count`/bouton
+  "Tri" qui restent en dehors) plutôt que par `.my-hand-wrap` directement.
+  Nécessaire car `.my-hand-wrap` est étiré par son parent flex
+  (`.table-wrap`) sur toute la largeur de l'écran, bien plus large que les
+  cartes réellement affichées dès que la main se vide en cours de manche —
+  un halo posé dessus débordait donc largement des cartes au lieu d'épouser
+  leur silhouette. `.my-hand-frame` a `width: fit-content` pour se limiter à
+  la largeur réelle du contenu. `overflow-x: auto` reste volontairement
+  porté par `.my-hand` (le filet de sécurité existant pour les cas extrêmes
+  de zoom/mise à l'échelle) et non par `.my-hand-frame` : un élément avec
+  overflow non-visible rogne aussi son propre `box-shadow`, ce qui aurait
+  recréé une bordure nette plutôt qu'un halo diffus. Le halo lui-même est
+  composé de 3 `box-shadow` superposées à flou/étalement/opacité croissants
+  (`myTurnGlow` dans `style.css`, teinte `--gold-rgb` ajoutée à côté de
+  `--gold` pour permettre l'opacité variable) plutôt qu'une seule ombre à
+  bord net, avec une pulsation douce en boucle. Disparaît immédiatement dès
+  que ce n'est plus mon tour (pas de transition de sortie). Respecte
+  `prefers-reduced-motion` (halo fixe à mi-intensité, sans pulsation,
+  plutôt que rien du tout). Une vibration du téléphone au moment du passage
+  de tour avait été ajoutée en même temps que ce halo puis entièrement
+  retirée sur demande explicite de l'utilisateur (aucune trace de code
+  résiduelle) — à ne pas réintroduire sans qu'il ne le redemande.
 
 ## Bugs corrigés (et pourquoi, pour éviter de les réintroduire)
 
@@ -228,6 +312,14 @@ l'utilisateur à la date du 2026-07-06, sauf mention contraire ci-dessous.
    via `state.trickBeingResolved`. Confirmé résolu par l'utilisateur en test
    réel (2026-07-06) ; un cas résiduel plus rare persiste sous stress-test
    avec bots très rapides, voir section suivante.
+10. **Chevauchement du bouton "Règles" et des score-chips sur mobile.** Le
+    `padding-top` de `.table-wrap` n'avait été calé que pour l'ancien bouton
+    "Quitter" (texte, ~24px de haut) ; insuffisant une fois ce bouton (et
+    "Règles") transformés en icônes avec une zone tactile de 40px (voir
+    `.hud-btn` plus haut), plus le badge donneur qui déborde de 8px au-dessus
+    du score-chip concerné. Le premier/dernier chip (le plus proche d'un
+    bord) passait donc sous le bouton, surtout à 4 joueurs. Corrigé en
+    augmentant ce `padding-top` à 60px.
 
 ## Ce qu'il reste à faire / à surveiller
 
@@ -337,15 +429,14 @@ Le déploiement se fait via GitHub → Render :
 4. Le plan gratuit met le serveur en veille après inactivité : le premier
    chargement après une veille peut prendre 30-60 secondes.
 
-Il n'existe pas de script/commande pour vérifier automatiquement qu'un
-déploiement Render a réussi depuis cet environnement — c'est à vérifier
-manuellement sur l'URL publique (`https://<nom-du-service>.onrender.com`)
-après le push, **sauf si l'utilisateur fournit une clé API Render** (donnée
-en clair dans le chat lors d'une session précédente, non stockée dans ce
-repo ni ailleurs pour des raisons de sécurité — si besoin, la redemander).
-Avec une clé, vérifier via l'API :
+Depuis le 2026-07-06, une clé API Render est disponible **localement** dans
+`.env` à la racine du repo (`RENDER_API_KEY=...`), gitignorée (vérifié
+`.env` bien listé dans `.gitignore`, jamais commitée/poussée) — pas besoin
+de redemander la clé à l'utilisateur tant que ce fichier existe. Vérifier un
+déploiement :
 
 ```bash
+set -a && source .env && set +a
 curl -s -H "Authorization: Bearer $RENDER_API_KEY" \
   "https://api.render.com/v1/services/srv-d93orn57vvec73deij20/deploys?limit=1"
 ```
@@ -353,4 +444,6 @@ curl -s -H "Authorization: Bearer $RENDER_API_KEY" \
 Service id du web service `copas-online` : `srv-d93orn57vvec73deij20`.
 Attendre `deploy.status == "live"` avec `deploy.commit.id` correspondant au
 commit poussé (séquence typique : `build_in_progress` → `update_in_progress`
-→ `live`, ~15-30s).
+→ `live`, ~30-45s en pratique). Si `.env` est absent (nouvel environnement,
+clé expirée...), redemander une clé fraîche à l'utilisateur plutôt que de
+supposer qu'une ancienne fonctionne encore.
