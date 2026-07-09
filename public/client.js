@@ -836,6 +836,12 @@ function playerName(id) {
   return p ? p.name : '?';
 }
 
+// Easter egg : liste exacte de pseudos (sensible à la casse, chaque variante
+// listée explicitement plutôt qu'une comparaison insensible à la casse) qui
+// déclenchent un message de tour démesuré rien que pour ce joueur — voir
+// renderGame(), où statusText/la classe .status-line-mega en dépendent.
+const EASTER_EGG_NAMES = ['Capu', 'capu', 'Capucine', 'capucine', 'Kpu', 'kpu'];
+
 function isBotPlayer(id) {
   if (!state.room) return false;
   return !!state.room.players.find((p) => p.id === id)?.isBot;
@@ -1111,6 +1117,7 @@ function renderGame() {
   const myId = state.myId;
   const others = hand.players.filter((p) => p !== myId);
   const myTurn = hand.turnPlayerId === myId && !state.handOverInfo;
+  const myTurnEasterEgg = myTurn && EASTER_EGG_NAMES.includes(playerName(myId));
   const dealerId = hand.players[hand.dealerIndex];
 
   const dealerBadge = `<div class="dealer-badge" title="Donneur">D</div>`;
@@ -1169,7 +1176,7 @@ function renderGame() {
       return renderTrickSlot(liveTrick[i] || null);
     }).join('');
     trickHtml = `<div class="trick-slots">${slots}</div>`;
-    statusText = myTurn ? 'À toi de jouer !' : `Au tour de ${playerName(hand.turnPlayerId)}…`;
+    statusText = myTurnEasterEgg ? 'À toi de jouer Capucine !!!' : myTurn ? 'À toi de jouer !' : `Au tour de ${playerName(hand.turnPlayerId)}…`;
   }
 
   // Pioche visible (3 joueurs uniquement) : un petit tas de dos de carte au
@@ -1272,7 +1279,7 @@ function renderGame() {
       <div class="center-area">
         ${specialBanner}
         ${centerRowHtml}
-        <div class="status-line ${myTurn ? 'my-turn' : ''}">${statusText}</div>
+        <div class="status-line ${myTurn ? 'my-turn' : ''} ${myTurnEasterEgg && !state.trickResult ? 'status-line-mega' : ''}">${statusText}</div>
       </div>
       <div class="my-hand-wrap" data-anchor="player-${myId}">
         <div class="copas-count my-copas-count" title="Copas ramassées dans cette manche">${SUIT_SVG.copas}<span>+${hand.tricksWonCopas[myId] ?? 0}</span></div>

@@ -424,6 +424,63 @@ button.secondary {
 }
 .status-line.my-turn { color: var(--gold); font-weight: 700; }
 
+/* Easter egg : message de tour démesurément agrandi pour une poignée de
+   pseudos précis (voir EASTER_EGG_NAMES dans client.js), visible seulement
+   sur l'écran du joueur concerné. clamp() plutôt qu'une taille fixe pour
+   rester dans les limites de l'écran sur mobile (le texte est plus long que
+   le message normal) ; white-space: normal (contrairement à .status-line,
+   qui n'a pas besoin de retour à la ligne d'ordinaire) autorise le
+   retour à la ligne si la largeur ne suffit vraiment pas. Sélecteur à deux
+   classes pour l'emporter sur .status-line.my-turn (même spécificité que
+   lui, donc départagé par l'ordre plutôt que risquer un conflit silencieux
+   si l'ordre des règles bouge un jour).
+   Taille calée empiriquement (testé à 390x844, iPhone 13 sans barre
+   d'adresse) : au-delà d'environ 13vw ici, le texte "À TOI DE JOUER
+   CAPUCINE !!!" gagne une ligne de retour à la ligne supplémentaire et
+   dépasse alors 100dvh (défilement vertical constaté en conditions
+   réelles) — la valeur actuelle garde ~2,5vw de marge sous ce seuil. Toute
+   nouvelle augmentation doit être retestée précisément à cette taille
+   d'écran.
+   Halo clignotant en boucle via text-shadow animé (plusieurs couches à
+   flou croissant, couleur --gold pleine plutôt qu'une rgba avec canal
+   alpha variable — inutile ici, faire varier le flou/l'étalement des
+   couches suffit à créer l'effet de pulsation sans avoir besoin d'un
+   triplet rgb dédié). prefers-reduced-motion : halo fixe (dernière frame
+   de la boucle) plutôt que sans halo du tout, pour garder l'effet visuel
+   sans l'aspect clignotant. */
+.status-line.status-line-mega {
+  font-size: clamp(1.9rem, 10.5vw, 3.1rem);
+  font-weight: 900;
+  line-height: 1.1;
+  color: var(--gold);
+  white-space: normal;
+  text-transform: uppercase;
+  padding: 4px 6px;
+  animation: megaTextGlow 1.4s ease-in-out infinite;
+}
+@keyframes megaTextGlow {
+  0%, 100% {
+    text-shadow:
+      0 0 6px var(--gold),
+      0 0 14px var(--gold);
+  }
+  50% {
+    text-shadow:
+      0 0 16px var(--gold),
+      0 0 34px var(--gold),
+      0 0 52px var(--gold);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .status-line.status-line-mega {
+    animation: none;
+    text-shadow:
+      0 0 12px var(--gold),
+      0 0 26px var(--gold),
+      0 0 40px var(--gold);
+  }
+}
+
 .special-banner {
   text-align: center;
   font-size: 0.64rem;
