@@ -47,8 +47,10 @@ confirmée par l'utilisateur ("ça me convient bien pour l'instant" —
 validation initiale, pas encore un essai prolongé en partie complète) ; et
 un net renforcement du niveau de Bot Sergio (voir décisions techniques
 ci-dessous, section Bot Sergio), qui passe d'un lookahead à 2 plis à une
-recherche exacte de fin de manche — testé et validé par simulation
-uniquement (`game/botAI_expert.test.js`), pas encore rejoué par
+recherche exacte de fin de manche, puis (sur demande explicite après
+mesure de ses statistiques sur 50 parties) une profondeur de recherche
+encore étendue spécifiquement à 3 joueurs — testé et validé par
+simulation uniquement (`game/botAI_expert.test.js`), pas encore rejoué par
 l'utilisateur en conditions réelles. Tout est testé et confirmé
 fonctionnel par l'utilisateur à ces dates, sauf mention contraire
 ci-dessous.
@@ -236,10 +238,11 @@ ci-dessous.
       (minimax à un seul agent branchant + élagage + table de
       transposition, voir les commentaires détaillés en tête de
       `game/botAI_expert.js`) dès qu'il reste au plus
-      `EXACT_SEARCH_MAX_REMAINING_TRICKS` (6) plis à jouer — sinon repli sur
-      le lookahead à 2 plis (v1, conservé tel quel dans le même fichier),
-      hors de portée d'une recherche exacte jusqu'au bout aussi tôt dans la
-      manche. Simplification clé qui rend la recherche exacte calculable :
+      `exactSearchMaxRemainingTricks(numPlayers)` plis à jouer — sinon repli
+      sur le lookahead à 2 plis (v1, conservé tel quel dans le même
+      fichier), hors de portée d'une recherche exacte jusqu'au bout aussi
+      tôt dans la manche. Simplification clé qui rend la recherche exacte
+      calculable :
       les AUTRES joueurs sont modélisés comme suivant l'heuristique simple
       de `botAI.js` en politique FIXE et déterministe (un seul coup à
       explorer à leur tour, aucun branchement) — seuls les tours de Sergio
@@ -278,6 +281,44 @@ ci-dessous.
       simples, nette amélioration par rapport à la v1 (~64%/~58%), sans
       jamais tenter de coup illégal ni ralentissement perceptible mesuré
       (quelques ms par décision en pratique, budget dur à 200ms).
+    - **v3 (2026-07-10, même jour) : profondeur de recherche exacte
+      étendue spécifiquement à 3 joueurs, sur demande explicite de
+      l'utilisateur après avoir mesuré ses statistiques sur 50 parties
+      (25 à 3, 25 à 4 joueurs) — Sergio y ressortait nettement plus
+      faible qu'à 4 joueurs (76% de victoires contre 100%, 1,88 copa/
+      manche en moyenne contre 0,78). Deux raisons identifiées : une
+      manche à 3 joueurs compte 13 plis (pas 10, à cause de la pioche),
+      donc une même profondeur ABSOLUE que celle utilisée à 4 joueurs y
+      couvre une part plus petite de la manche ; et surtout, à 3 joueurs,
+      la pioche restante (`hand.drawPile`) est déjà connue de Sergio en
+      intégralité — contenu ET ordre de tirage exacts, rien n'y est
+      caché ni aléatoire une fois la manche distribuée (voir l'en-tête du
+      fichier) — ce qui rend une recherche exacte bien plus loin dans la
+      manche tout aussi fiable qu'en fin de manche, sans l'incertitude
+      qu'on associerait normalement à une "pioche". `exactSearchMax
+      RemainingTricks(numPlayers)` distingue donc désormais 3 joueurs (10
+      plis, contre 6 par défaut à 4) ; la profondeur a été choisie par
+      mesure empirique directe plutôt qu'au jugé, en testant plusieurs
+      valeurs (6 à 13) sur des lots de 20-40 parties complètes avec le
+      vrai budget de temps de 200ms : le taux de victoire progresse
+      nettement jusqu'à 9-10 (93-100% observé), puis la profondeur 11
+      commence déjà à déclencher occasionnellement le budget de temps
+      (quelques décisions à 202ms sur ~3000, donc un repli sur le
+      lookahead à 2 plis dans ces cas précis) pour un gain marginal — 10
+      a été retenue comme le point où le gain reste net (~93-100% de
+      victoires contre ~76-90% à profondeur 6) tout en gardant une marge
+      confortable sous le budget de temps (max observé ~116ms sur
+      plusieurs centaines de parties de test, contre un budget dur de
+      200ms). Testé (`botAI_expert.test.js`, seuils de non-régression
+      relevés en conséquence à 3 joueurs : >85% de victoires, contre >70%
+      avant ce chantier) : ~93-100% de victoires sur plusieurs essais de
+      50 parties à 3 joueurs, sans dépassement de budget observé y
+      compris dans un scénario construit exprès au plafond de profondeur
+      (10 plis restants, branchement maximal). Profondeur à 4 joueurs
+      volontairement inchangée (6) : non demandée par l'utilisateur, déjà
+      quasi imbattable (100% de victoires sur le lot de 50 parties
+      mesuré), et l'argument "pioche déjà connue" ne s'applique de toute
+      façon pas à 4 joueurs (pas de pioche du tout dans ce mode).
 - **Colonnes de `.trick-slots` dynamiques selon `hand.numPlayers`**
   (`.trick-slots-3`/`.trick-slots-4` dans `style.css`, classe posée par
   `renderGame()` dans `client.js`) : les cartes du pli en cours tiennent

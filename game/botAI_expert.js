@@ -67,7 +67,29 @@ const SEARCH_TIMEOUT = Symbol('sergio-search-timeout');
 // "5-6 derniers plis" (cf. demande) : au-delà, la recherche exacte devient
 // trop coûteuse pour rester instantanée — on se replie alors sur le
 // lookahead à 2 plis pour les décisions prises plus tôt dans la manche.
-const EXACT_SEARCH_MAX_REMAINING_TRICKS = 6;
+//
+// Profondeur plus généreuse à 3 joueurs (10, contre 6 à 4 joueurs) pour
+// deux raisons distinctes :
+//  1. Une manche à 3 joueurs compte 13 plis (pas 10) à cause de la pioche —
+//     à profondeur ABSOLUE égale, une même valeur couvrirait une part plus
+//     petite de la manche qu'à 4 joueurs.
+//  2. La pioche restante (hand.drawPile) est déjà connue de Sergio en
+//     intégralité, contenu ET ordre de tirage (voir l'en-tête du fichier) :
+//     rien n'y est caché ni aléatoire une fois la manche distribuée,
+//     contrairement à ce qu'on pourrait supposer d'une "pioche". La
+//     recherche exacte peut donc s'y risquer nettement plus loin sans
+//     perdre en fiabilité que si l'avenir dépendait d'un vrai tirage
+//     inconnu.
+// Mesuré empiriquement (voir botAI_expert.test.js) : 10 reste très
+// largement dans le budget de temps (EXACT_SEARCH_TIME_BUDGET_MS), avec une
+// marge confortable avant les premiers dépassements observés (aux
+// alentours de 11-12 sur les scénarios les plus coûteux testés).
+const EXACT_SEARCH_MAX_REMAINING_TRICKS_3P = 10;
+const EXACT_SEARCH_MAX_REMAINING_TRICKS_DEFAULT = 6;
+
+function exactSearchMaxRemainingTricks(numPlayers) {
+  return numPlayers === 3 ? EXACT_SEARCH_MAX_REMAINING_TRICKS_3P : EXACT_SEARCH_MAX_REMAINING_TRICKS_DEFAULT;
+}
 
 // Budget de temps dur pour la recherche exacte : Node.js est mono-thread,
 // ce calcul bloque donc tout le serveur (toutes les parties en cours,
@@ -277,7 +299,7 @@ function tryExactEndgameSearch(hand, playerId, suspendedBefore) {
 // ---------------------------------------------------------------------------
 //
 // Utilisé pour les décisions prises tôt dans la manche (recherche exacte
-// jusqu'au bout hors de portée, voir EXACT_SEARCH_MAX_REMAINING_TRICKS) et
+// jusqu'au bout hors de portée, voir exactSearchMaxRemainingTricks) et
 // comme filet de sécurité si la recherche exacte dépasse son budget de
 // temps. Pour chaque coup légal, simule jusqu'à LOOKAHEAD_TRICKS plis
 // complets supplémentaires avec l'heuristique simple pour tous les joueurs
@@ -364,7 +386,7 @@ function chooseBotCard(hand, playerId, scores) {
 
   const suspendedBefore = (scores && scores[playerId] && scores[playerId].suspended) || 0;
 
-  if (estimateRemainingTricks(hand) <= EXACT_SEARCH_MAX_REMAINING_TRICKS) {
+  if (estimateRemainingTricks(hand) <= exactSearchMaxRemainingTricks(hand.numPlayers)) {
     const exactChoice = tryExactEndgameSearch(hand, playerId, suspendedBefore);
     if (exactChoice) return exactChoice;
     // Budget de temps dépassé : repli ci-dessous.

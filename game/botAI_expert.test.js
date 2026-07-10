@@ -217,6 +217,49 @@ test('Recherche exacte : reste rapide même dans le cas le plus coûteux (6 plis
   assert.ok(elapsed < 400, `la décision ne devrait jamais prendre plus de quelques centaines de ms (budget interne 200ms) ; observé : ${elapsed}ms`);
 });
 
+test('Recherche exacte à 3 joueurs : reste rapide même au plafond de profondeur (10 plis restants, branchement maximal)', () => {
+  // À 3 joueurs, la recherche exacte va nettement plus loin qu'à 4 (voir
+  // exactSearchMaxRemainingTricks dans botAI_expert.js — la pioche y est
+  // déjà connue en intégralité, rien n'y est aléatoire). Même scénario
+  // délibérément difficile que le test 4 joueurs ci-dessus, mais calé sur
+  // le plafond propre aux 3 joueurs (10, pas 6).
+  const players = ['Sergio', 'B', 'C'];
+  const hand = engine.dealNewHand(players, 0);
+  hand.tricksPlayed = 3; // 3 joueurs, 13 plis au total : il en reste 10
+  hand.hands = {
+    Sergio: [
+      card('espadas', '2'), card('espadas', '3'), card('espadas', '4'), card('ouros', '2'),
+      card('ouros', '3'), card('ouros', '4'), card('paus', '2'), card('paus', '3'), card('paus', '4'), card('copas', '2'),
+    ],
+    B: [
+      card('espadas', '5'), card('espadas', '6'), card('espadas', 'valete'), card('ouros', '5'),
+      card('ouros', '6'), card('ouros', 'valete'), card('paus', '5'), card('paus', '6'), card('paus', 'valete'), card('copas', '3'),
+    ],
+    C: [
+      card('espadas', 'dama'), card('espadas', 'rei'), card('espadas', '7'), card('ouros', 'dama'),
+      card('ouros', 'rei'), card('ouros', '7'), card('paus', 'dama'), card('paus', 'rei'), card('paus', '7'), card('copas', '4'),
+    ],
+  };
+  hand.drawPile = [];
+  hand.currentTrick = [];
+  hand.playedCards = [];
+  hand.turnIndex = 0;
+
+  const scores = {
+    Sergio: { real: 22, suspended: 10 },
+    B: { real: 0, suspended: 0 },
+    C: { real: 0, suspended: 0 },
+  };
+
+  const started = Date.now();
+  const choice = chooseBotCard(hand, 'Sergio', scores);
+  const elapsed = Date.now() - started;
+
+  const playable = engine.getPlayableCards(hand, 'Sergio');
+  assert.ok(playable.some((c) => c.suit === choice.suit && c.rank === choice.rank), 'doit rester un coup légal');
+  assert.ok(elapsed < 400, `la décision ne devrait jamais prendre plus de quelques centaines de ms (budget interne 200ms) ; observé : ${elapsed}ms`);
+});
+
 // ---------------------------------------------------------------------------
 // Jamais de coup illégal, sur des manches complètes.
 // ---------------------------------------------------------------------------
@@ -347,15 +390,18 @@ test('Simulation de parties complètes (3 joueurs) : Sergio gagne nettement plus
   const avgSergio = totals.Sergio / N;
   const avgOthers = (totals.A + totals.B) / (2 * N);
   console.log(`    (taux de victoire de Sergio sur ${N} parties à 3 joueurs : ${(winRate * 100).toFixed(0)}% — score moyen: Sergio ${avgSergio.toFixed(1)} vs adversaires ${avgOthers.toFixed(1)})`);
-  // Seuils relevés le 2026-07-10 (voir le commentaire équivalent ci-dessus,
-  // à 4 joueurs) : ~82-96% observé sur plusieurs essais de 50 parties
-  // (contre ~58% avec l'ancien lookahead à 2 plis seul).
+  // Seuils relevés le 2026-07-10, mis à jour le même jour après avoir
+  // étendu la profondeur de recherche exacte spécifiquement à 3 joueurs
+  // (10 plis, contre 6 par défaut — voir exactSearchMaxRemainingTricks) :
+  // ~93-100% observé sur plusieurs essais de 50 parties (contre ~58% avec
+  // l'ancien lookahead à 2 plis seul, ~78-96% avec la recherche exacte à
+  // profondeur 6 comme à 4 joueurs).
   assert.ok(
-    winRate > 0.7,
-    `Sergio devrait gagner très nettement plus souvent qu'avant la recherche exacte de fin de manche ; observé : ${(winRate * 100).toFixed(0)}%`
+    winRate > 0.85,
+    `Sergio devrait gagner très nettement plus souvent qu'avant l'extension de la recherche exacte à 3 joueurs ; observé : ${(winRate * 100).toFixed(0)}%`
   );
   assert.ok(
-    avgSergio < avgOthers * 0.5,
+    avgSergio < avgOthers * 0.35,
     `score réel moyen de Sergio devrait rester très nettement sous celui des adversaires ; observé : ${avgSergio.toFixed(1)} vs ${avgOthers.toFixed(1)}`
   );
 });
