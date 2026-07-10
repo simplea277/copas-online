@@ -981,23 +981,25 @@ button.secondary {
 /* Pastille "points en suspens" — ancrée au coin haut-droit du siège
    (.seat, voir plus haut ; toujours positionnée relative à ce conteneur,
    qu'il s'agisse d'un adversaire ou de mon propre siège). Volontairement
-   compacte (juste le chiffre, pas la phrase complète) : un bandeau plus
-   large a été jugé trop imposant — le nombre seul suffit, avec l'info-bulle
-   native (title, survol desktop) + une bulle tapée/cliquée pour le mobile
-   (.suspended-tooltip plus bas) pour qui veut le confirmer en toutes
-   lettres.
+   compacte au repos (juste le chiffre, pas la phrase complète) : un
+   bandeau plus large en permanence a été jugé trop imposant — au tap/clic,
+   elle s'agrandit SUR PLACE (.suspended-float.expanded, transition CSS)
+   pour afficher "X points en suspens" en toutes lettres, plutôt qu'une
+   bulle d'aide séparée à côté.
    .suspended-wrap porte le positionnement absolu (coin haut-droit du
-   siège) ET la zone tactile confortable (40x40px, comme .hud-btn) ; le
-   petit disque coloré (.suspended-float) n'est plus qu'un enfant centré
-   dedans par flexbox, pas lui-même positionné.
+   siège) ET la zone tactile confortable (40x40px, comme .hud-btn) ;
+   .suspended-float est lui-même positionné en absolu à l'intérieur (top/
+   left explicites plutôt que centré par flexbox), pour pouvoir déplacer
+   SON point d'ancrage entre l'état compact et l'état agrandi (voir plus
+   bas pourquoi) — jamais de width/height/top/left à "auto" : une
+   transition CSS n'anime proprement qu'entre deux valeurs numériques.
    Pas d'anneau `0 0 0 2px var(--felt)` façon badge donneur sur la pastille
-   (essayé puis retiré) : cette pastille est une pilule à largeur variable
-   (2 chiffres avec le "+" devant l'élargissent), pas un cercle de taille
-   fixe comme le badge donneur — posée au coin du siège, à cheval sur son
-   fond clair et sur le tapis plus sombre juste à côté, l'anneau y
-   ressortait comme un petit rectangle vert bien visible au lieu de se
-   fondre discrètement. Seule une ombre portée neutre reste, pour le
-   relief. */
+   (essayé puis retiré) : cette pastille change de largeur (chiffre seul vs
+   phrase complète), pas un cercle de taille fixe comme le badge donneur —
+   posée au coin du siège, à cheval sur son fond clair et sur le tapis plus
+   sombre juste à côté, l'anneau y ressortait comme un petit rectangle vert
+   bien visible au lieu de se fondre discrètement. Seule une ombre portée
+   neutre reste, pour le relief. */
 .suspended-wrap {
   position: absolute;
   top: -19px;
@@ -1009,17 +1011,19 @@ button.secondary {
 .suspended-hit {
   all: unset;
   box-sizing: border-box;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  position: relative; /* ancre .suspended-float, sans lui-même bouger */
+  display: block;
   width: 100%;
   height: 100%;
   cursor: pointer;
 }
 .suspended-float {
-  min-width: 19px;
+  position: absolute;
+  top: 10px;
+  left: 8px; /* centre la pastille compacte (24x19) dans les 40x40px de la zone tactile */
+  width: 24px;
   height: 19px;
-  padding: 0 3px;
+  padding: 0;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1027,43 +1031,64 @@ button.secondary {
   color: var(--ivory);
   font-size: 0.62rem;
   font-weight: 800;
-  line-height: 1;
+  line-height: 1.25;
   border-radius: 50%;
   animation: floaty 2.2s ease-in-out infinite;
   box-shadow: 0 3px 8px rgba(0,0,0,0.4);
+  text-align: center;
+  transition: width 0.24s cubic-bezier(.22,.85,.35,1), height 0.24s cubic-bezier(.22,.85,.35,1),
+    top 0.24s cubic-bezier(.22,.85,.35,1), left 0.24s cubic-bezier(.22,.85,.35,1),
+    border-radius 0.22s ease, padding 0.24s ease, font-size 0.16s ease, box-shadow 0.24s ease;
 }
+/* Agrandie : déplace le point d'ancrage plutôt que de juste grossir sur
+   place, pour toujours grossir VERS LE CENTRE OUVERT DU TAPIS — jamais
+   vers un siège voisin ni hors de l'écran. Par défaut (siège du haut
+   centré à 4 joueurs, ou mon siège centré en bas — voir l'exception
+   .seat-me plus bas) : centré horizontalement sur les 40px de la zone
+   tactile (left = (40-190)/2), grossit vers le bas, loin du bord supérieur
+   de l'écran où les sièges adverses sont proches (voir .table-wrap
+   padding-top). 138px de descente : dépasse la hauteur maximale observée
+   d'un siège adverse (~91px) AVEC le décalage supplémentaire des sièges de
+   coin (.table-seats-4 .seat-pos-left/.seat-pos-right ont un margin-top de
+   16px pour suggérer un arc, voir plus haut) — sans en tenir compte, la
+   bulle du siège du haut chevauchait de justesse (mesuré : ~1px) le bas du
+   siège adjacent à 4 joueurs, plus bas que le sien du fait de ce
+   décalage. */
+.suspended-float.expanded {
+  top: 138px;
+  left: -75px;
+  width: clamp(150px, 60vw, 190px);
+  height: 44px;
+  padding: 6px 16px;
+  border-radius: 18px;
+  font-size: 0.78rem;
+  font-weight: 700;
+  line-height: 1.3;
+  white-space: normal;
+  animation: none; /* le flottement gênerait la lecture du texte complet */
+  box-shadow: 0 8px 20px rgba(0,0,0,0.45);
+}
+/* Sièges adverses de coin (gauche/droite) : grossir centré déborderait de
+   l'écran (mesuré : jusqu'à -62px hors champ à gauche) puisqu'ils sont
+   déjà collés au bord — grossit entièrement vers l'intérieur du tapis à
+   la place (le siège gauche vers la droite, le siège droit vers la
+   gauche). */
+.seat-pos-left .suspended-float.expanded { left: 0; }
+.seat-pos-right .suspended-float.expanded { left: -150px; } /* -(190-40) : bord droit de la bulle aligné sur celui de la zone tactile */
+/* Mon siège, en bas de l'écran plutôt qu'en haut : grossir vers le bas
+   n'y laisserait pas assez de place avant le bord de l'écran/ma main de
+   cartes (mesuré : dépasserait du viewport) — grossit vers le HAUT à la
+   place, vers le centre ouvert du tapis au-dessus. Mon siège est bien
+   plus compact qu'un siège adverse (pas de mini-cartes ni de compteur de
+   copas dessus), une remontée modeste suffit à le dégager entièrement. */
+.seat-me .suspended-float.expanded { top: -56px; }
 @keyframes floaty {
   0%, 100% { transform: translateY(0) rotate(-3deg); }
   50% { transform: translateY(-3px) rotate(3deg); }
 }
 @media (prefers-reduced-motion: reduce) {
   .suspended-float { animation: none; }
-}
-
-/* Bulle "Points en suspens" affichée au tap/clic sur la pastille (voir
-   state.suspendedTooltipPlayerId dans client.js) — toujours sous la zone
-   tactile plutôt qu'au-dessus : les sièges adverses touchent presque le
-   haut de l'écran (voir .table-wrap padding-top), une bulle qui s'ouvrirait
-   vers le haut risquerait de sortir du viewport. Même langage visuel que
-   les autres petites pastilles du site (fond sombre translucide, flou,
-   bordure ivoire discrète). */
-.suspended-tooltip {
-  position: absolute;
-  top: 100%;
-  right: 0;
-  margin-top: 2px;
-  white-space: nowrap;
-  background: rgba(10,20,15,0.92);
-  border: 1px solid rgba(245,239,224,0.25);
-  color: var(--ivory);
-  font-size: 0.68rem;
-  font-weight: 600;
-  padding: 4px 9px;
-  border-radius: 8px;
-  backdrop-filter: blur(4px);
-  box-shadow: 0 4px 12px rgba(0,0,0,0.4);
-  z-index: 4;
-  pointer-events: none;
+  .suspended-float, .suspended-float.expanded { transition: none; }
 }
 
 /* Overlays */

@@ -82,7 +82,7 @@ function leaveGame() {
   state.trickResult = null;
   state.lastTrick = null;
   state.lastTrickRevealed = false;
-  state.suspendedTooltipPlayerId = null;
+  state.suspendedExpandedPlayerId = null;
   state.error = null;
   state.myId = null;
   state.screen = 'home';
@@ -134,14 +134,15 @@ const state = {
   trickResult: null,    // { trick, winnerId, copasInTrick } affiché temporairement
   lastTrick: null,      // dernier pli résolu, consultable via le widget carte face cachée
   lastTrickRevealed: false, // le widget est-il actuellement retourné (cartes visibles) ?
-  suspendedTooltipPlayerId: null, // playerId dont la pastille "+X points en
-                                  // suspens" a été tapée/cliquée (voir
-                                  // .suspended-float) : affiche alors une
-                                  // courte info-bulle "Points en suspens" à
-                                  // proximité de SA pastille précise. Un seul
-                                  // à la fois (retape la même = referme),
-                                  // jamais persisté au-delà de la partie en
-                                  // cours (remis à null dans leaveGame()).
+  suspendedExpandedPlayerId: null, // playerId dont la pastille "+X points en
+                                   // suspens" a été tapée/cliquée (voir
+                                   // .suspended-float) : celle-ci s'agrandit
+                                   // alors sur place pour afficher "X points
+                                   // en suspens" en toutes lettres. Un seul
+                                   // à la fois (retaper la même = la
+                                   // referme), jamais persisté au-delà de la
+                                   // partie en cours (remis à null dans
+                                   // leaveGame()).
   handOverInfo: null,   // payload de game:handOver, tant que l'overlay est affiché
   joining: false,
   dealAnim: null,       // { id, phase: 'cards'|'pile', phaseStarted, sequence } tant que l'animation de distribution joue
@@ -1318,22 +1319,20 @@ function renderGame() {
 
   const dealerBadge = `<div class="dealer-badge" title="Donneur">D</div>`;
   // Pastille "points en suspens" (voir .suspended-float dans style.css) :
-  // juste le chiffre, avec l'info-bulle native (title, hover desktop) ET une
-  // courte info-bulle "Points en suspens" au tap/clic (.suspended-tooltip,
-  // voir state.suspendedTooltipPlayerId) — nécessaire sur mobile, où il n'y
-  // a pas de survol. .suspended-hit est un vrai <button>, dont la zone
-  // tactile (.suspended-wrap, 40x40px) dépasse largement la pastille
-  // visible, comme les autres petits boutons du site (voir .hud-btn).
+  // au tap/clic, s'agrandit SUR PLACE (transition CSS, voir style.css) pour
+  // afficher "X points en suspens" en toutes lettres plutôt que juste "+X" —
+  // un second tap/clic (n'importe où, voir le gestionnaire global de clic
+  // tout en bas du fichier) la referme. .suspended-hit est un vrai
+  // <button>, dont la zone tactile (.suspended-wrap, 40x40px) dépasse
+  // largement la pastille visible, comme les autres petits boutons du site
+  // (voir .hud-btn).
   const renderSuspendedBadge = (pid, suspended) => {
     if (suspended <= 0) return '';
-    const tooltip = state.suspendedTooltipPlayerId === pid
-      ? `<div class="suspended-tooltip" role="status">Points en suspens</div>`
-      : '';
+    const expanded = state.suspendedExpandedPlayerId === pid;
     return `<div class="suspended-wrap">
-      <button type="button" class="suspended-hit" data-suspended-player="${pid}" title="${suspended} points en suspens" aria-label="${suspended} points en suspens, appuyer pour en savoir plus">
-        <span class="suspended-float">+${suspended}</span>
+      <button type="button" class="suspended-hit${expanded ? ' expanded' : ''}" data-suspended-player="${pid}" title="${suspended} points en suspens" aria-label="${suspended} points en suspens" aria-expanded="${expanded}">
+        <span class="suspended-float${expanded ? ' expanded' : ''}">${expanded ? `${suspended} points en suspens` : `+${suspended}`}</span>
       </button>
-      ${tooltip}
     </div>`;
   };
 
@@ -1544,11 +1543,13 @@ function renderGame() {
   // stopPropagation : empêche le clic d'atteindre le gestionnaire global
   // (voir tout en bas du fichier) qui referme la bulle sur tout clic hors
   // d'elle — sinon ce même clic la rouvrirait puis la refermerait aussitôt.
+  // Un second clic n'importe où SUR la bulle agrandie (donc aussi sur ce
+  // même bouton) la referme également, via ce même gestionnaire (toggle).
   document.querySelectorAll('.suspended-hit').forEach((btn) => {
     btn.onclick = (e) => {
       e.stopPropagation();
       const pid = btn.dataset.suspendedPlayer;
-      state.suspendedTooltipPlayerId = state.suspendedTooltipPlayerId === pid ? null : pid;
+      state.suspendedExpandedPlayerId = state.suspendedExpandedPlayerId === pid ? null : pid;
       render();
     };
   });
@@ -1917,12 +1918,13 @@ document.addEventListener('click', (e) => {
       render();
     }
   }
-  // Referme la bulle "Points en suspens" (voir renderSuspendedBadge) sur
-  // n'importe quel clic ailleurs sur la page ; le clic sur la pastille
-  // elle-même n'atteint jamais ce gestionnaire (stopPropagation dans son
-  // propre onclick, voir renderGame), donc pas de conflit à l'ouverture.
-  if (state.suspendedTooltipPlayerId) {
-    state.suspendedTooltipPlayerId = null;
+  // Referme la bulle "X points en suspens" agrandie (voir
+  // renderSuspendedBadge) sur n'importe quel clic ailleurs sur la page ; le
+  // clic sur la pastille elle-même n'atteint jamais ce gestionnaire
+  // (stopPropagation dans son propre onclick, voir renderGame), donc pas de
+  // conflit à l'ouverture ni à sa propre fermeture par un second clic dessus.
+  if (state.suspendedExpandedPlayerId) {
+    state.suspendedExpandedPlayerId = null;
     render();
   }
 });
