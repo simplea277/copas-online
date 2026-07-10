@@ -1309,14 +1309,30 @@ function renderGame() {
 
   const dealerBadge = `<div class="dealer-badge" title="Donneur">D</div>`;
 
-  const opponentsHtml = others.map((pid) => {
+  // Position de chaque adversaire autour de la table (disposition "sièges"),
+  // dérivée de l'index dans `others` (lui-même dans l'ordre fixe de
+  // hand.players, jamais rotaté d'une manche à l'autre) : à 3 joueurs, les 2
+  // adversaires de part et d'autre en haut ; à 4 joueurs, un 3e siège
+  // s'ajoute en haut au centre, les 2 autres sur les côtés. Garantit que le
+  // siège visuel de chacun reste stable pendant toute la partie plutôt que
+  // de dépendre du joueur dont c'est le tour.
+  const SEAT_POSITIONS_BY_OPPONENT_COUNT = {
+    2: ['left', 'right'],
+    3: ['left', 'top', 'right'],
+  };
+  const seatPositions = SEAT_POSITIONS_BY_OPPONENT_COUNT[others.length] || others.map(() => 'top');
+
+  const opponentsHtml = others.map((pid, i) => {
     const count = hand.handSizes[pid] ?? 0;
     const active = hand.turnPlayerId === pid;
     const miniCards = Array.from({ length: Math.min(count, 10) }).map(() => `<div class="mc"></div>`).join('');
     const copasWon = hand.tricksWonCopas[pid] ?? 0;
-    return `<div class="opponent ${active ? 'active-turn' : ''}" data-anchor="player-${pid}">
+    const s = room.scores?.[pid] || { real: 0, suspended: 0 };
+    return `<div class="seat seat-pos-${seatPositions[i]} ${active ? 'active-turn' : ''}" data-anchor="player-${pid}">
       ${pid === dealerId ? dealerBadge : ''}
-      <div class="name">${playerName(pid)}</div>
+      ${s.suspended > 0 ? `<div class="suspended-float">${s.suspended} en suspens</div>` : ''}
+      <div class="seat-name">${playerName(pid)}</div>
+      <div class="seat-score">${s.real}</div>
       <div class="mini-cards">${miniCards}</div>
       <div class="copas-count" title="Copas ramassées dans cette manche">${SUIT_SVG.copas}<span>+${copasWon}</span></div>
     </div>`;
@@ -1390,14 +1406,13 @@ function renderGame() {
     ? `<div class="special-banner">Phase de pioche — <strong>pas d'obligation de suivre la couleur</strong>, <strong>copas interdites</strong></div>`
     : '';
 
-  const scoreChips = hand.players.map((pid) => {
-    const s = room.scores?.[pid] || { real: 0, suspended: 0 };
-    return `<div class="score-chip ${pid === myId ? 'me' : ''}">
-      ${s.suspended > 0 ? `<div class="suspended-float">${s.suspended} en suspens</div>` : ''}
-      <div class="name">${playerName(pid)}</div>
-      <div class="real">${s.real}</div>
-    </div>`;
-  }).join('');
+  const myScoreObj = room.scores?.[myId] || { real: 0, suspended: 0 };
+  const myScoreHtml = `<div class="seat seat-me ${myTurn ? 'active-turn' : ''}">
+    ${dealerId === myId ? dealerBadge : ''}
+    ${myScoreObj.suspended > 0 ? `<div class="suspended-float">${myScoreObj.suspended} en suspens</div>` : ''}
+    <div class="seat-name">${playerName(myId)}</div>
+    <div class="seat-score">${myScoreObj.real}</div>
+  </div>`;
 
   // Pendant l'étape "cards" de la distribution, ma main n'est pas encore
   // révélée : on affiche des dos de carte à la place, sans bloquer le reste
@@ -1461,18 +1476,22 @@ function renderGame() {
     ${renderLastTrickWidget()}
     <div id="deal-anim-layer"></div>
     <div class="screen table-wrap">
-      <div class="score-bar">${scoreChips}</div>
-      <div class="opponents-row">${opponentsHtml}</div>
-      <div class="center-area">
-        ${specialBanner}
-        ${centerRowHtml}
-        <div class="status-line ${myTurn ? 'my-turn' : ''} ${myTurnEasterEgg && !state.trickResult ? 'status-line-mega' : ''}">${statusText}</div>
+      <div class="table-oval">
+        <div class="table-seats table-seats-${hand.numPlayers}">${opponentsHtml}</div>
+        <div class="center-area">
+          ${specialBanner}
+          ${centerRowHtml}
+          <div class="status-line ${myTurn ? 'my-turn' : ''} ${myTurnEasterEgg && !state.trickResult ? 'status-line-mega' : ''}">${statusText}</div>
+        </div>
       </div>
-      <div class="my-hand-wrap" data-anchor="player-${myId}">
-        <div class="copas-count my-copas-count" title="Copas ramassées dans cette manche">${SUIT_SVG.copas}<span>+${hand.tricksWonCopas[myId] ?? 0}</span></div>
-        <button class="my-sort-toggle-btn" id="btn-sort-toggle" title="${state.handSortDesc ? 'Trier par force croissante' : 'Trier par force décroissante'}" aria-label="Inverser le sens de tri des cartes">Tri</button>
-        ${justDrawnGhostHtml}
-        <div class="my-hand ${dealingInProgress ? 'my-hand-pending' : ''}">${myHandHtml}</div>
+      <div class="my-seat-wrap">
+        ${myScoreHtml}
+        <div class="my-hand-wrap" data-anchor="player-${myId}">
+          <div class="copas-count my-copas-count" title="Copas ramassées dans cette manche">${SUIT_SVG.copas}<span>+${hand.tricksWonCopas[myId] ?? 0}</span></div>
+          <button class="my-sort-toggle-btn" id="btn-sort-toggle" title="${state.handSortDesc ? 'Trier par force croissante' : 'Trier par force décroissante'}" aria-label="Inverser le sens de tri des cartes">Tri</button>
+          ${justDrawnGhostHtml}
+          <div class="my-hand ${dealingInProgress ? 'my-hand-pending' : ''}">${myHandHtml}</div>
+        </div>
       </div>
     </div>
     ${renderHandOverOverlay()}

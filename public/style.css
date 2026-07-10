@@ -236,48 +236,133 @@ button.secondary {
   justify-content: space-between;
   gap: 12px;
   /* Laisse la place aux boutons "Règles"/"Quitter" (fixed, hors du flux) et
-     au badge donneur (déborde de -8px au-dessus du score-chip concerné) :
-     sans cette marge, le premier ou dernier score-chip (le plus proche d'un
-     bord) peut passer sous ces boutons, surtout à 4 joueurs où les chips
-     s'étalent davantage. */
+     au badge donneur (déborde de -8px au-dessus du siège concerné) : sans
+     cette marge, le siège du haut (voire le tapis lui-même) peut passer
+     sous ces boutons, surtout à 4 joueurs où le siège central touche le
+     bord supérieur du tapis. */
   padding-top: 60px;
 }
 
-.opponents-row {
+/* Table façon "assise autour du tapis" : un siège par joueur (nom + score
+   total + copas de la manche + mini-main + badge donneur + surbrillance de
+   tour), regroupés dans .table-oval (le tapis) pour les adversaires, et un
+   siège compact au-dessus de ma propre main (.seat-me, voir .my-seat-wrap
+   plus bas) — un seul bloc visuel cohérent par joueur au lieu de deux
+   rangées séparées (score-bar + opponents-row) comme avant. .table-oval
+   reste un simple panneau arrondi (pas une véritable ellipse géométrique) :
+   un vrai border-radius:50% aurait coupé les coins de la boîte rectangulaire
+   et fait "flotter" les sièges de côté hors du tapis visible — un
+   rectangle très arrondi lit tout aussi bien comme "table" tout en gardant
+   chaque siège lisible, y compris dans les coins, à toutes les tailles
+   d'écran testées. */
+.table-oval {
+  position: relative;
+  flex: 1;
   display: flex;
-  justify-content: center;
-  gap: 14px;
-  flex-wrap: wrap;
+  flex-direction: column;
+  min-height: 190px;
+  border-radius: 28px;
+  background:
+    radial-gradient(ellipse at 50% 28%, rgba(245,239,224,0.06), transparent 65%),
+    linear-gradient(180deg, rgba(11,46,34,0.55), rgba(8,33,25,0.75));
+  border: 2px solid rgba(200,155,60,0.28);
+  box-shadow: inset 0 0 34px rgba(0,0,0,0.45), 0 4px 16px rgba(0,0,0,0.25);
+  padding: 10px 8px 6px;
 }
 
-.opponent {
+/* 3 joueurs (2 adversaires) : simple rangée, symétrique de part et d'autre
+   en haut du tapis — comme avant, mais maintenant posée sur le fond du
+   tapis plutôt que flottant au-dessus. */
+.table-seats {
+  position: relative;
+}
+.table-seats-3 {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 6px;
+}
+
+/* 4 joueurs (3 adversaires) : grille à 3 colonnes (côté / centre / côté) —
+   le siège du centre reste net en haut du tapis, les 2 sièges de côté
+   légèrement décalés vers le bas pour suggérer un arc autour du tapis
+   plutôt qu'une simple rangée droite. */
+.table-seats-4 {
+  display: grid;
+  grid-template-columns: minmax(58px, 1fr) auto minmax(58px, 1fr);
+  align-items: start;
+  gap: 4px;
+}
+.table-seats-4 .seat-pos-top { justify-self: center; }
+.table-seats-4 .seat-pos-left { justify-self: start; margin-top: 16px; }
+.table-seats-4 .seat-pos-right { justify-self: end; margin-top: 16px; }
+
+.seat {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 4px;
-  padding: 8px 10px;
+  gap: 3px;
+  padding: 6px 9px;
   border-radius: 12px;
-  background: rgba(245,239,224,0.05);
-  min-width: 68px;
+  background: rgba(245,239,224,0.06);
+  border: 1px solid rgba(245,239,224,0.14);
+  min-width: 58px;
   position: relative;
 }
-.opponent.active-turn {
+.seat.active-turn {
   background: rgba(200,155,60,0.22);
   box-shadow: 0 0 0 2px var(--gold);
 }
-.opponent .name { font-size: 0.78rem; font-weight: 600; }
-.opponent .mini-cards { display: flex; }
-.opponent .mini-cards .mc {
+.seat-name {
+  font-size: 0.74rem;
+  font-weight: 600;
+  color: var(--ivory);
+  max-width: 84px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.seat-score {
+  font-family: var(--font-display);
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: var(--ivory);
+  line-height: 1;
+}
+.seat .mini-cards { display: flex; }
+.seat .mini-cards .mc {
   width: 10px; height: 14px;
   background: var(--azulejo);
   border: 1px solid var(--ivory-dim);
   border-radius: 2px;
   margin-left: -4px;
 }
-.opponent .mini-cards .mc:first-child { margin-left: 0; }
+.seat .mini-cards .mc:first-child { margin-left: 0; }
+
+/* Mon propre siège : au-dessus de ma main (voir .my-seat-wrap), en ligne
+   plutôt qu'en colonne (nom + score côte à côte, plus compact). Fond/
+   bordure teintés or plutôt que le ton ivoire neutre des sièges adverses —
+   c'est le repère visuel principal pour distinguer "mon siège" au premier
+   coup d'œil, cohérent avec le reste des accents dorés du thème (bordures
+   des cartes jouables, badge donneur, bouton Tri...). */
+.seat.seat-me {
+  flex-direction: row;
+  gap: 10px;
+  padding: 5px 14px;
+  min-width: 0;
+  width: fit-content;
+  margin: 0 auto;
+  background: rgba(200,155,60,0.12);
+  border-color: rgba(200,155,60,0.4);
+}
+.seat.seat-me .seat-score { font-size: 0.95rem; }
+.seat.seat-me.active-turn {
+  background: rgba(200,155,60,0.3);
+  box-shadow: 0 0 0 2px var(--gold);
+}
 
 /* Compteur de copas ramassées dans la MANCHE EN COURS (hand.tricksWonCopas)
-   — distinct du score total de la partie déjà affiché dans .score-chip.
+   — distinct du score total de la partie déjà affiché dans .seat-score.
    Même icône SVG que sur les cartes (SUIT_SVG.copas dans client.js),
    jamais un emoji cœur. Style identique partout (mien comme adversaires) :
    petit badge avec fond contrasté, plutôt qu'un texte rouge nu sur le tapis
@@ -312,12 +397,13 @@ button.secondary {
 }
 
 .center-area {
+  flex: 1;
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 10px;
-  padding: 14px;
-  min-height: 150px;
+  padding: 10px 6px;
+  min-height: 130px;
   justify-content: center;
 }
 
@@ -817,28 +903,17 @@ button.secondary {
   .just-drawn-ghost.entering, .my-hand .pcard.just-drawn.entering { animation: none; }
 }
 
-/* Score bar */
-.score-bar {
-  display: flex;
-  justify-content: center;
-  gap: 10px;
-  flex-wrap: wrap;
-}
-.score-chip {
+/* Mon siège (nom + score, voir .seat-me plus haut) + ma main, regroupés en
+   un seul bloc en bas de l'écran — la disposition de la main elle-même
+   (cartes, bouton Tri, bulle de chat, compteur de copas) reste inchangée,
+   voir .my-hand-wrap plus bas. */
+.my-seat-wrap {
   display: flex;
   flex-direction: column;
-  align-items: center;
-  padding: 8px 12px;
-  border-radius: 12px;
-  background: rgba(245,239,224,0.06);
-  min-width: 64px;
-  position: relative;
+  gap: 6px;
 }
-.score-chip .name { font-size: 0.72rem; color: var(--ivory-dim); }
-.score-chip .real { font-family: var(--font-display); font-size: 1.3rem; font-weight: 700; }
-.score-chip.me { box-shadow: 0 0 0 2px var(--gold); }
 
-/* Badge donneur — jeton "D" façon poker, sur l'opponent chip ou le score-chip
+/* Badge donneur — jeton "D" façon poker, sur le siège du joueur qui donne
    du joueur qui donne la manche en cours. Reste affiché tant que dure la
    manche, change de joueur à la manche suivante (hand.dealerIndex). */
 .dealer-badge {
