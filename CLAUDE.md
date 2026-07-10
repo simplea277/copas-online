@@ -41,9 +41,13 @@ l'affichage du nom fonctionnent aussi en solo) ; un chat textuel en temps
 réel entre joueurs du salon (voir décisions techniques ci-dessous) ; et le
 retrait de l'emoji robot 🤖 à côté du nom des bots partout où il
 apparaissait (le préfixe "Bot" et la colombe 🕊️ de Bot Rose, qui font
-partie du nom lui-même, restent inchangés). Tout est testé et confirmé
-fonctionnel par l'utilisateur à ces dates, sauf mention contraire
-ci-dessous.
+partie du nom lui-même, restent inchangés) ; et une refonte de la
+disposition de l'écran de jeu en "table" (voir décisions techniques
+ci-dessous). Tout est testé et confirmé fonctionnel par l'utilisateur à ces
+dates, sauf mention contraire ci-dessous — **la refonte de disposition en
+table est la seule exception à ce jour** : implémentée et auto-vérifiée
+(Playwright, voir décisions techniques), pas encore rejouée en conditions
+réelles par l'utilisateur.
 
 ## Stack et architecture
 
@@ -316,8 +320,9 @@ ci-dessous.
 - **Compteur de copas de la manche en cours** (`hand.tricksWonCopas`, déjà
   calculé côté serveur, remis à zéro à chaque nouvelle manche) : affiché
   pour moi (`.my-copas-count`, au-dessus à droite de `.my-hand-wrap`) et
-  pour chaque adversaire (`.copas-count` dans son `.opponent` chip), au
-  format `+X` avec l'icône SVG `SUIT_SVG.copas` (jamais un emoji cœur).
+  pour chaque adversaire (`.copas-count` dans son siège, voir `.seat`
+  ci-dessous), au format `+X` avec l'icône SVG `SUIT_SVG.copas` (jamais un
+  emoji cœur).
   Couleur dédiée `--copas-bright` (`#ff6b6b`, rouge vif) plutôt que `--copas`
   (rouge brique pensé pour l'ivoire des cartes, peu lisible sur le tapis
   vert). Le nombre de cartes en main des adversaires (`X cartes`) a été
@@ -329,12 +334,78 @@ ci-dessous.
   visuelle plus petite centrée dedans. Le bouton "Quitter" n'est pas rendu
   du tout tant que l'overlay des règles est ouvert (évite qu'il reste
   cliquable par-dessus). `.table-wrap` a un `padding-top: 60px` calé pour
-  que la rangée de score-chips (et le badge donneur qui déborde de 8px
-  au-dessus du chip concerné) passe toujours sous ces boutons fixes, y
-  compris à 4 joueurs où les chips s'étalent davantage.
+  que la rangée de sièges du haut (et le badge donneur qui déborde de 8px
+  au-dessus du siège concerné) passe toujours sous ces boutons fixes, y
+  compris à 4 joueurs où le siège central touche le bord supérieur du tapis
+  (voir la refonte de disposition en "table" plus bas, qui a hérité de ce
+  padding sans le changer).
 - **`100dvh` (avec repli `100vh`) sur `#app`** (`style.css`) : `100vh` seul
   ne tient pas compte de la barre d'adresse Safari sur iPhone, provoquant un
   défilement vertical parasite quand elle apparaît/disparaît au scroll.
+- **Refonte de l'écran de jeu en disposition "table"** (2026-07-10,
+  `client.js`/`style.css`) : chaque joueur (adversaire ou moi) est
+  désormais représenté par un seul bloc visuel cohérent — nom, score total,
+  copas de la manche, mini-main (dos de cartes) ou main complète pour moi,
+  badge donneur, surbrillance de tour — au lieu des deux rangées séparées
+  d'avant (`.score-bar` pour tout le monde + `.opponents-row` pour les
+  seuls adversaires, chacun affichant une partie de l'info). Les anciennes
+  classes `.opponent`/`.score-chip`/`.opponents-row`/`.score-bar` ont été
+  remplacées par `.seat` (bloc générique réutilisé pour adversaires et moi)
+  + `.table-oval` (le tapis) + `.table-seats-3`/`.table-seats-4` (disposition
+  des sièges adverses selon `hand.numPlayers`) + `.seat-me`/`.my-seat-wrap`
+  (mon propre siège, au-dessus de ma main).
+  - **Disposition des sièges adverses dérivée de l'index dans `others`**
+    (lui-même dans l'ordre fixe de `hand.players`, jamais rotaté d'une
+    manche à l'autre) plutôt que de l'ordre de jeu du tour : le siège
+    visuel de chacun reste stable pendant toute la partie. À 3 joueurs
+    (`table-seats-3`, 2 adversaires) : simple rangée `justify-content:
+    space-between`, symétrique de part et d'autre en haut du tapis — déjà
+    proche de la disposition d'avant, juste posée sur le fond du tapis. À 4
+    joueurs (`table-seats-4`, 3 adversaires) : grille CSS à 3 colonnes
+    (gauche / centre / droite) plutôt qu'un positionnement absolu avec
+    calculs trigonométriques — le siège du centre-haut reste net en haut,
+    les 2 sièges de côté ont un `margin-top` pour suggérer un arc autour du
+    tapis. Le choix de la grille CSS (plutôt que de l'absolu) a été fait
+    pour rester robuste aux différentes tailles d'écran sans calcul de
+    position manuel.
+  - **`.table-oval` : un simple panneau très arrondi (`border-radius:
+    28px`), pas une véritable ellipse géométrique.** Un vrai
+    `border-radius: 50%` sur une boîte rectangulaire aurait coupé les
+    coins de la boîte et fait "flotter" les sièges de côté hors de la
+    zone verte visible aux coins (l'ellipse inscrite s'écarte du
+    rectangle près des coins, exactement là où les sièges de côté à 4
+    joueurs sont positionnés) — un rectangle très arrondi avec un dégradé
+    radial + une bordure dorée lit tout aussi bien comme "tapis de table"
+    tout en gardant chaque siège entièrement lisible, y compris dans les
+    coins, à toutes les tailles d'écran testées.
+  - **Mon siège (`.seat-me`) distingué visuellement des sièges adverses par
+    une teinte or** (fond + bordure `rgba(200,155,60,...)`) plutôt que le
+    ton ivoire neutre des sièges adverses (`.seat`) — cohérent avec le
+    reste des accents dorés déjà présents sur le site (bordure des cartes
+    jouables, badge donneur, bouton "Tri"...). `.seat-me` est en ligne
+    (nom + score côte à côte, compact) plutôt qu'en colonne comme les
+    sièges adverses, posé juste au-dessus de `.my-hand-wrap` dans un
+    conteneur `.my-seat-wrap` commun.
+  - **Aucun changement au JS d'animation** (distribution, pioche, pose de
+    carte dans le pli, vol vers le tas des plis joués) : tout ce code
+    mesure ses points de départ/arrivée via `getBoundingClientRect()` sur
+    les éléments `[data-anchor="player-X"]`, jamais via une position CSS
+    supposée fixe — ces attributs `data-anchor` ont simplement été
+    conservés sur les nouveaux éléments `.seat`/`.my-hand-wrap` à leur
+    nouvel emplacement, sans toucher au calcul des animations elles-mêmes.
+  - Testé via un script Playwright temporaire (parties solo 3 et 4
+    joueurs, mobile 390×844 et desktop 1280×900) : aucun défilement
+    horizontal ni vertical dans aucune configuration
+    (`document.documentElement.scrollWidth/Height` == `clientWidth/
+    Height`), badge donneur/surbrillance de tour/compteur de copas/score
+    tous visibles et positionnés correctement sur chaque siège. Un
+    artefact repéré en cours de route (cartes de distribution mal
+    positionnées) s'est avéré être un effet du script de test lui-même
+    (redimensionnement du viewport pendant qu'une animation de vol de
+    carte était en cours, alors que ces vols utilisent des coordonnées
+    pixel figées au départ du vol) — confirmé sans rapport avec le
+    changement de disposition via une passe de test sans redimensionnement
+    en cours d'animation.
 
 ## Fausses pistes essayées puis abandonnées
 
