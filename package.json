@@ -5,7 +5,7 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "test": "node game/engine.test.js && node game/botAI.test.js"
+    "test": "node game/engine.test.js && node game/botAI.test.js && node game/botAI_expert.test.js"
   },
   "dependencies": {
     "express": "^4.19.2",

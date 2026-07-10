@@ -28,8 +28,13 @@ l'écran, vibration du téléphone au passage de tour) avant d'être
 entièrement abandonnées sur demande de l'utilisateur, qui a préféré revenir
 à l'indicateur d'origine (bordure dorée simple sur les cartes jouables +
 message de statut texte) — voir "Fausses pistes essayées puis abandonnées"
-ci-dessous. Tout est testé et confirmé fonctionnel par l'utilisateur à ces
-dates, sauf mention contraire ci-dessous.
+ci-dessous. Le 2026-07-10, un cinquième bot ("Bot Sergio") a été ajouté avec
+un niveau de jeu nettement supérieur aux 4 autres (voir décisions
+techniques ci-dessous), après une première tentative par déduction
+statistique + tirages aléatoires abandonnée en cours de route au profit
+d'un accès direct à l'état réel de la partie (voir "Fausses pistes"). Tout
+est testé et confirmé fonctionnel par l'utilisateur à ces dates, sauf
+mention contraire ci-dessous.
 
 ## Stack et architecture
 
@@ -176,6 +181,42 @@ dates, sauf mention contraire ci-dessous.
     (factorisé) gère aussi bien un coup humain (`game:playCard`) qu'un coup
     de bot, et rappelle `scheduleBotTurnIfNeeded` après chaque coup pour
     enchaîner naturellement d'un bot au suivant.
+  - **Bot Sergio, niveau "expert"** (`game/botAI_expert.js`, distinct de
+    `game/botAI.js` utilisé par les 4 autres bots) : pioché comme les autres
+    dans `BOT_NAMES` (donc pas garanti dans chaque partie), mais reconnu via
+    `makeBot()` → `expert: name.startsWith(EXPERT_BOT_NAME)` et dispatché
+    vers la bonne IA dans `scheduleBotTurnIfNeeded` (`server.js`). Choix
+    assumé : contrairement aux 4 autres bots (et à un joueur humain), Sergio
+    a un accès direct à l'état RÉEL complet de la manche — `hand.hands[id]`
+    de chaque adversaire et `hand.drawPile` au grand complet — plutôt que de
+    déduire/deviner ces informations. Cet accès ne nécessite aucun paramètre
+    supplémentaire : `room.currentHand` (passé tel quel à `chooseBotCard`)
+    contient déjà tout ça côté serveur ; seule `handViewForPlayer()` (jamais
+    modifiée pour ce chantier) filtre ce qui part réellement vers chaque
+    client (uniquement `myHand` + `handSizes`, jamais les mains d'autrui ni
+    `drawPile`), donc rien ne fuite vers aucun client quel que soit le
+    joueur — confirmé par un test d'intégration en conditions réelles
+    (partie complète via socket.io-client, tous les payloads reçus côté
+    client scannés pour d'éventuelles clés `hands`/`drawPile`, aucune
+    trouvée). Avec cette connaissance complète, la décision se fait par une
+    recherche courte plutôt qu'une simulation coûteuse jusqu'à la fin de la
+    manche : pour chaque coup légal (`engine.getPlayableCards`, donc jamais
+    un coup illégal — filet de sécurité supplémentaire dans
+    `scheduleBotTurnIfNeeded` qui revalide et se replie sur `botAI` simple
+    si jamais ce n'était pas le cas), simule 2 plis à l'avance avec les
+    VRAIES cartes des autres joueurs (ceux-ci jouant selon l'heuristique
+    simple — exact pour un adversaire bot, approximation raisonnable pour un
+    humain sur un horizon aussi court) et retient le coup qui minimise les
+    copas récoltées par Sergio sur cette fenêtre (2e pli pondéré à moitié,
+    prédiction moins fiable). Volontairement borné à 2 plis plutôt qu'une
+    simulation jusqu'au bout : au-delà, l'hypothèse "heuristique simple"
+    pour un adversaire humain devient de moins en moins réaliste. Délai de
+    réflexion identique aux autres bots (`botThinkDelayMs`) avec un bonus
+    fixe de +400ms. Testé par simulation de dizaines de parties complètes
+    (`game/botAI_expert.test.js`) : gagne (score réel final le plus bas)
+    nettement plus souvent que le hasard face à des bots simples (~65-70%
+    de victoires contre ~25-33% attendu par pur hasard à 4/3 joueurs), sans
+    jamais tenter de coup illégal.
 - **Section "Règles du jeu"** (`renderRulesOverlay` dans `client.js`) :
   overlay accessible depuis l'accueil (onglets 3/4 joueurs, celui à 3 actif
   par défaut) et depuis une partie en cours (version correspondant au nombre
@@ -223,6 +264,33 @@ dates, sauf mention contraire ci-dessous.
   texte ("À toi de jouer !" / "Au tour de X…"), comme avant cette session.
   À ne pas réintroduire une variante similaire sans que l'utilisateur ne le
   redemande explicitement.
+- **IA du bot Sergio : déduction par cartes vues + Monte Carlo, avant l'accès
+  direct à l'état réel.** Le 2026-07-10, deux approches intermédiaires ont
+  précédé la version finale (voir décisions techniques ci-dessus) :
+  1. Une IA à règles fixes déduisant les cartes encore en jeu et les "vides"
+     de couleur des adversaires à partir de `hand.playedCards` (mémoire des
+     cartes vues), avec des heuristiques manuelles (forcer un adversaire
+     vide, prendre la main avec une carte garantie imbattable...). Mesurée
+     par simulation de parties complètes contre le bot simple : ces
+     heuristiques se sont révélées **neutres voire légèrement
+     défavorables** une fois testées à grande échelle (~28% de victoires à
+     4 joueurs, à peine au-dessus du hasard) — prendre systématiquement la
+     main s'est avéré coûter plus cher que ça ne rapporte, en exposant
+     Sergio à hériter des copas qu'un adversaire vide peut défausser sans
+     jamais risquer de remporter le pli lui-même.
+  2. Un remplacement par recherche Monte Carlo (détermination aléatoire des
+     mains adverses compatibles avec les vides déduits + rollout jusqu'à la
+     fin de la manche, 16 tirages par coup candidat) : très efficace en
+     simulation pure (~65-97% de victoires), mais reposait sur une main
+     adverse **devinée** au hasard alors que le serveur connaît déjà la
+     vraie main — inutilement complexe pour le gain obtenu, remplacé sur
+     demande explicite de l'utilisateur par l'accès direct decrit plus haut
+     (plus simple, plus rapide, et tout aussi voire plus efficace).
+  `hand.playedCards` (ajouté à `engine.js` pour la 1ère tentative) a été
+  conservé même si l'approche finale ne l'utilise plus : historique complet
+  des cartes jouées depuis le début de la manche, potentiellement utile pour
+  une future fonctionnalité (undo, replay, stats...), et son ajout est
+  purement additif (aucun test existant cassé).
 
 ## Bugs corrigés (et pourquoi, pour éviter de les réintroduire)
 

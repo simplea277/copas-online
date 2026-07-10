@@ -10,6 +10,7 @@ const http = require('http');
 const { Server } = require('socket.io');
 const engine = require('./game/engine');
 const botAI = require('./game/botAI');
+const botAIExpert = require('./game/botAI_expert');
 
 const app = express();
 const server = http.createServer(app);
@@ -37,8 +38,13 @@ const rooms = {};
 // socket réel (socketId/sessionToken null) — jamais de destinataire pour un
 // emit direct, jamais de session à reprendre. Liste de noms fixe, pour
 // rester clairement distincts des pseudos suggérés côté client (Alan,
-// Romane, Mika, Capu).
-const BOT_NAMES = ['Bot Tia', 'Bot Romaric', 'Bot Cyrano', 'Bot Rose 🕊️'];
+// Romane, Mika, Capu). "Bot Sergio" pioché comme les autres (aucune
+// UI dédiée pour le cibler délibérément) mais reconnu comme "expert" dans
+// makeBot() ci-dessous : niveau de jeu nettement supérieur, voir
+// game/botAI_expert.js (EXPERT_BOT_NAME doit rester synchronisé avec le nom
+// utilisé ici).
+const BOT_NAMES = ['Bot Tia', 'Bot Romaric', 'Bot Cyrano', 'Bot Rose 🕊️', 'Bot Sergio'];
+const EXPERT_BOT_NAME = 'Bot Sergio';
 let botCounter = 0;
 
 function shuffle(arr) {
@@ -79,6 +85,9 @@ function makeBot(name) {
     name,
     connected: true,
     isBot: true,
+    // startsWith (pas ===) pour couvrir aussi le repli "Bot Sergio 2" de
+    // pickBotNames si jamais plus de bots que de noms sont demandés.
+    expert: name.startsWith(EXPERT_BOT_NAME),
   };
 }
 
@@ -140,12 +149,17 @@ function markAnimationBusy(room, durationMs) {
 /**
  * Délai de "réflexion" avant qu'un bot ne joue, une fois les animations en
  * cours terminées : plus court quand un seul coup est possible (rien à
- * choisir), plus long quand il a plusieurs options.
+ * choisir), plus long quand il a plusieurs options. Le bot expert (Sergio)
+ * garde le même système mais avec un délai légèrement plus long, pour
+ * suggérer qu'il "réfléchit" davantage (son raisonnement est aussi
+ * effectivement plus coûteux, mais ça reste négligeable en pratique — le
+ * délai supplémentaire est purement pour le ressenti côté joueurs).
  */
-function botThinkDelayMs(playableCount) {
-  if (playableCount <= 1) return 900 + Math.floor(Math.random() * 500); // 900-1400ms
+function botThinkDelayMs(playableCount, expert) {
+  const bonus = expert ? 400 : 0;
+  if (playableCount <= 1) return 900 + Math.floor(Math.random() * 500) + bonus; // 900-1400ms (+400 si expert)
   const optionsBonus = Math.min(300, (playableCount - 1) * 60);
-  return 1500 + Math.floor(Math.random() * 1200) + optionsBonus; // ~1500-3000ms
+  return 1500 + Math.floor(Math.random() * 1200) + optionsBonus + bonus; // ~1500-3000ms (+400 si expert)
 }
 
 function makeRoomCode() {
@@ -238,9 +252,10 @@ function scheduleBotTurnIfNeeded(room) {
   if (!isBotTurn(room)) return;
 
   const botId = room.currentHand.players[room.currentHand.turnIndex];
+  const bot = room.players.find((p) => p.playerId === botId);
   const playableCount = engine.getPlayableCards(room.currentHand, botId).length;
   const animWait = Math.max(0, (room.animationBusyUntil || 0) - Date.now());
-  const delay = animWait + botThinkDelayMs(playableCount);
+  const delay = animWait + botThinkDelayMs(playableCount, bot?.expert);
 
   setTimeout(() => {
     try {
@@ -248,7 +263,30 @@ function scheduleBotTurnIfNeeded(room) {
       if (!currentRoom || currentRoom !== room || !isBotTurn(currentRoom)) return;
 
       const currentBotId = currentRoom.currentHand.players[currentRoom.currentHand.turnIndex];
-      const card = botAI.chooseBotCard(currentRoom.currentHand, currentBotId);
+      const currentBot = currentRoom.players.find((p) => p.playerId === currentBotId);
+      const ai = currentBot?.expert ? botAIExpert : botAI;
+      let card = ai.chooseBotCard(currentRoom.currentHand, currentBotId, currentRoom.scores);
+
+      // Filet de sécurité : handleCardPlay ne reprogramme PAS le tour
+      // suivant si engine.playCard rejette le coup (retour {ok:false}, pas
+      // une exception — donc invisible au catch ci-dessous), ce qui
+      // bloquerait la partie indéfiniment sans aucune trace si jamais une
+      // IA de bot renvoyait un coup illégal. On revalide donc explicitement
+      // contre les coups réellement légaux avant de jouer, et on se replie
+      // sur l'heuristique simple (jamais illégale, voir botAI.test.js) en
+      // loguant clairement l'anomalie plutôt que de planter la partie.
+      const legal = engine.getPlayableCards(currentRoom.currentHand, currentBotId);
+      const isLegal = legal.some((c) => c.suit === card.suit && c.rank === card.rank);
+      if (!isLegal) {
+        console.error(
+          `[bot] coup illégal renvoyé par ${currentBot?.expert ? "l'IA experte" : "l'IA simple"} pour ${currentBotId} :`,
+          card,
+          '— repli sur botAI simple. Coups légaux:',
+          legal
+        );
+        card = botAI.chooseBotCard(currentRoom.currentHand, currentBotId);
+      }
+
       handleCardPlay(currentRoom, currentBotId, card);
     } catch (err) {
       console.error('[bot] erreur inattendue:', err);

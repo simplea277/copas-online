@@ -74,6 +74,14 @@ function dealNewHand(players, dealerIndex) {
     drawPile,               // uniquement pour 3 joueurs (9 cartes au départ)
     tricksPlayed: 0,
     currentTrick: [],       // [{ playerId, card }]
+    playedCards: [],        // [{ playerId, card }] TOUTES les cartes jouées depuis le
+                             // début de la manche (plis résolus + pli en cours), jamais
+                             // vidé contrairement à currentTrick — sert de mémoire pour
+                             // toute logique qui a besoin de déduire les cartes encore en
+                             // jeu et les "vides" de couleur des joueurs (voir
+                             // game/botAI_expert.js). Toujours un multiple de numPlayers
+                             // cartes par pli complet, ce qui permet de retrouver les
+                             // limites de chaque pli par simple découpage.
     turnIndex: firstPlayerIndex,   // index dans `players` de celui qui doit jouer
     leaderIndex: firstPlayerIndex, // qui a ouvert le pli courant
     tricksWonCopas: Object.fromEntries(players.map((p) => [p, 0])),
@@ -135,6 +143,7 @@ function playCard(hand, playerId, card) {
   playerHand.splice(idx, 1);
 
   hand.currentTrick.push({ playerId, card: found });
+  hand.playedCards.push({ playerId, card: found });
 
   const trickComplete = hand.currentTrick.length === hand.numPlayers;
 
