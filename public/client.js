@@ -1308,6 +1308,11 @@ function renderGame() {
   const dealerId = hand.players[hand.dealerIndex];
 
   const dealerBadge = `<div class="dealer-badge" title="Donneur">D</div>`;
+  // Pastille "points en suspens" (voir .suspended-float dans style.css) :
+  // juste le chiffre, avec l'info-bulle pour le détail — un ancien bandeau
+  // "X en suspens" en toutes lettres a été jugé trop imposant.
+  const renderSuspendedBadge = (suspended) =>
+    suspended > 0 ? `<div class="suspended-float" title="${suspended} points en suspens">${suspended}</div>` : '';
 
   // Position de chaque adversaire autour de la table (disposition "sièges"),
   // dérivée de l'index dans `others` (lui-même dans l'ordre fixe de
@@ -1330,7 +1335,7 @@ function renderGame() {
     const s = room.scores?.[pid] || { real: 0, suspended: 0 };
     return `<div class="seat seat-pos-${seatPositions[i]} ${active ? 'active-turn' : ''}" data-anchor="player-${pid}">
       ${pid === dealerId ? dealerBadge : ''}
-      ${s.suspended > 0 ? `<div class="suspended-float">${s.suspended} en suspens</div>` : ''}
+      ${renderSuspendedBadge(s.suspended)}
       <div class="seat-name">${playerName(pid)}</div>
       <div class="seat-score">${s.real}</div>
       <div class="mini-cards">${miniCards}</div>
@@ -1409,7 +1414,7 @@ function renderGame() {
   const myScoreObj = room.scores?.[myId] || { real: 0, suspended: 0 };
   const myScoreHtml = `<div class="seat seat-me ${myTurn ? 'active-turn' : ''}">
     ${dealerId === myId ? dealerBadge : ''}
-    ${myScoreObj.suspended > 0 ? `<div class="suspended-float">${myScoreObj.suspended} en suspens</div>` : ''}
+    ${renderSuspendedBadge(myScoreObj.suspended)}
     <div class="seat-name">${playerName(myId)}</div>
     <div class="seat-score">${myScoreObj.real}</div>
   </div>`;
