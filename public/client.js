@@ -82,6 +82,7 @@ function leaveGame() {
   state.trickResult = null;
   state.lastTrick = null;
   state.lastTrickRevealed = false;
+  state.suspendedTooltipPlayerId = null;
   state.error = null;
   state.myId = null;
   state.screen = 'home';
@@ -133,6 +134,14 @@ const state = {
   trickResult: null,    // { trick, winnerId, copasInTrick } affiché temporairement
   lastTrick: null,      // dernier pli résolu, consultable via le widget carte face cachée
   lastTrickRevealed: false, // le widget est-il actuellement retourné (cartes visibles) ?
+  suspendedTooltipPlayerId: null, // playerId dont la pastille "+X points en
+                                  // suspens" a été tapée/cliquée (voir
+                                  // .suspended-float) : affiche alors une
+                                  // courte info-bulle "Points en suspens" à
+                                  // proximité de SA pastille précise. Un seul
+                                  // à la fois (retape la même = referme),
+                                  // jamais persisté au-delà de la partie en
+                                  // cours (remis à null dans leaveGame()).
   handOverInfo: null,   // payload de game:handOver, tant que l'overlay est affiché
   joining: false,
   dealAnim: null,       // { id, phase: 'cards'|'pile', phaseStarted, sequence } tant que l'animation de distribution joue
@@ -1309,10 +1318,24 @@ function renderGame() {
 
   const dealerBadge = `<div class="dealer-badge" title="Donneur">D</div>`;
   // Pastille "points en suspens" (voir .suspended-float dans style.css) :
-  // juste le chiffre, avec l'info-bulle pour le détail — un ancien bandeau
-  // "X en suspens" en toutes lettres a été jugé trop imposant.
-  const renderSuspendedBadge = (suspended) =>
-    suspended > 0 ? `<div class="suspended-float" title="${suspended} points en suspens">+${suspended}</div>` : '';
+  // juste le chiffre, avec l'info-bulle native (title, hover desktop) ET une
+  // courte info-bulle "Points en suspens" au tap/clic (.suspended-tooltip,
+  // voir state.suspendedTooltipPlayerId) — nécessaire sur mobile, où il n'y
+  // a pas de survol. .suspended-hit est un vrai <button>, dont la zone
+  // tactile (.suspended-wrap, 40x40px) dépasse largement la pastille
+  // visible, comme les autres petits boutons du site (voir .hud-btn).
+  const renderSuspendedBadge = (pid, suspended) => {
+    if (suspended <= 0) return '';
+    const tooltip = state.suspendedTooltipPlayerId === pid
+      ? `<div class="suspended-tooltip" role="status">Points en suspens</div>`
+      : '';
+    return `<div class="suspended-wrap">
+      <button type="button" class="suspended-hit" data-suspended-player="${pid}" title="${suspended} points en suspens" aria-label="${suspended} points en suspens, appuyer pour en savoir plus">
+        <span class="suspended-float">+${suspended}</span>
+      </button>
+      ${tooltip}
+    </div>`;
+  };
 
   // Position de chaque adversaire autour de la table (disposition "sièges"),
   // dérivée de l'index dans `others` (lui-même dans l'ordre fixe de
@@ -1335,7 +1358,7 @@ function renderGame() {
     const s = room.scores?.[pid] || { real: 0, suspended: 0 };
     return `<div class="seat seat-pos-${seatPositions[i]} ${active ? 'active-turn' : ''}" data-anchor="player-${pid}">
       ${pid === dealerId ? dealerBadge : ''}
-      ${renderSuspendedBadge(s.suspended)}
+      ${renderSuspendedBadge(pid, s.suspended)}
       <div class="seat-name">${playerName(pid)}</div>
       <div class="seat-score">${s.real}</div>
       <div class="mini-cards">${miniCards}</div>
@@ -1414,7 +1437,7 @@ function renderGame() {
   const myScoreObj = room.scores?.[myId] || { real: 0, suspended: 0 };
   const myScoreHtml = `<div class="seat seat-me ${myTurn ? 'active-turn' : ''}">
     ${dealerId === myId ? dealerBadge : ''}
-    ${renderSuspendedBadge(myScoreObj.suspended)}
+    ${renderSuspendedBadge(myId, myScoreObj.suspended)}
     <div class="seat-name">${playerName(myId)}</div>
     <div class="seat-score">${myScoreObj.real}</div>
   </div>`;
@@ -1517,6 +1540,18 @@ function renderGame() {
     saveHandSortDesc(state.handSortDesc);
     render();
   };
+
+  // stopPropagation : empêche le clic d'atteindre le gestionnaire global
+  // (voir tout en bas du fichier) qui referme la bulle sur tout clic hors
+  // d'elle — sinon ce même clic la rouvrirait puis la refermerait aussitôt.
+  document.querySelectorAll('.suspended-hit').forEach((btn) => {
+    btn.onclick = (e) => {
+      e.stopPropagation();
+      const pid = btn.dataset.suspendedPlayer;
+      state.suspendedTooltipPlayerId = state.suspendedTooltipPlayerId === pid ? null : pid;
+      render();
+    };
+  });
 
   if (state.trickPileCount > 0) {
     document.getElementById('last-trick-widget').onclick = () => {
@@ -1881,6 +1916,14 @@ document.addEventListener('click', (e) => {
     } else {
       render();
     }
+  }
+  // Referme la bulle "Points en suspens" (voir renderSuspendedBadge) sur
+  // n'importe quel clic ailleurs sur la page ; le clic sur la pastille
+  // elle-même n'atteint jamais ce gestionnaire (stopPropagation dans son
+  // propre onclick, voir renderGame), donc pas de conflit à l'ouverture.
+  if (state.suspendedTooltipPlayerId) {
+    state.suspendedTooltipPlayerId = null;
+    render();
   }
 });
 
