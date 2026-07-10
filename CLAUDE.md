@@ -41,12 +41,17 @@ l'affichage du nom fonctionnent aussi en solo) ; un chat textuel en temps
 réel entre joueurs du salon (voir décisions techniques ci-dessous) ; et le
 retrait de l'emoji robot 🤖 à côté du nom des bots partout où il
 apparaissait (le préfixe "Bot" et la colombe 🕊️ de Bot Rose, qui font
-partie du nom lui-même, restent inchangés) ; et une refonte de la
-disposition de l'écran de jeu en "table" (voir décisions techniques
-ci-dessous), confirmée par l'utilisateur ("ça me convient bien pour
-l'instant" — validation initiale, pas encore un essai prolongé en partie
-complète). Tout est testé et confirmé fonctionnel par l'utilisateur à ces
-dates, sauf mention contraire ci-dessous.
+partie du nom lui-même, restent inchangés) ; une refonte de la disposition
+de l'écran de jeu en "table" (voir décisions techniques ci-dessous),
+confirmée par l'utilisateur ("ça me convient bien pour l'instant" —
+validation initiale, pas encore un essai prolongé en partie complète) ; et
+un net renforcement du niveau de Bot Sergio (voir décisions techniques
+ci-dessous, section Bot Sergio), qui passe d'un lookahead à 2 plis à une
+recherche exacte de fin de manche — testé et validé par simulation
+uniquement (`game/botAI_expert.test.js`), pas encore rejoué par
+l'utilisateur en conditions réelles. Tout est testé et confirmé
+fonctionnel par l'utilisateur à ces dates, sauf mention contraire
+ci-dessous.
 
 ## Stack et architecture
 
@@ -215,25 +220,64 @@ dates, sauf mention contraire ci-dessous.
     joueur — confirmé par un test d'intégration en conditions réelles
     (partie complète via socket.io-client, tous les payloads reçus côté
     client scannés pour d'éventuelles clés `hands`/`drawPile`, aucune
-    trouvée). Avec cette connaissance complète, la décision se fait par une
-    recherche courte plutôt qu'une simulation coûteuse jusqu'à la fin de la
-    manche : pour chaque coup légal (`engine.getPlayableCards`, donc jamais
-    un coup illégal — filet de sécurité supplémentaire dans
-    `scheduleBotTurnIfNeeded` qui revalide et se replie sur `botAI` simple
-    si jamais ce n'était pas le cas), simule 2 plis à l'avance avec les
-    VRAIES cartes des autres joueurs (ceux-ci jouant selon l'heuristique
-    simple — exact pour un adversaire bot, approximation raisonnable pour un
-    humain sur un horizon aussi court) et retient le coup qui minimise les
-    copas récoltées par Sergio sur cette fenêtre (2e pli pondéré à moitié,
-    prédiction moins fiable). Volontairement borné à 2 plis plutôt qu'une
-    simulation jusqu'au bout : au-delà, l'hypothèse "heuristique simple"
-    pour un adversaire humain devient de moins en moins réaliste. Délai de
-    réflexion identique aux autres bots (`botThinkDelayMs`) avec un bonus
-    fixe de +400ms. Testé par simulation de dizaines de parties complètes
-    (`game/botAI_expert.test.js`) : gagne (score réel final le plus bas)
-    nettement plus souvent que le hasard face à des bots simples (~65-70%
-    de victoires contre ~25-33% attendu par pur hasard à 4/3 joueurs), sans
-    jamais tenter de coup illégal.
+    trouvée). Toujours seulement des coups légaux (`engine.getPlayableCards`
+    — filet de sécurité supplémentaire dans `scheduleBotTurnIfNeeded` qui
+    revalide et se replie sur `botAI` simple si jamais ce n'était pas le
+    cas). Délai de réflexion identique aux autres bots (`botThinkDelayMs`)
+    avec un bonus fixe de +400ms.
+    - **v1 (2026-07-10, initiale) : lookahead à 2 plis.** Pour chaque coup
+      légal, simule 2 plis à l'avance avec les VRAIES cartes des autres
+      joueurs (heuristique simple de `botAI.js`) et retient le coup qui
+      minimise les copas récoltées par Sergio sur cette fenêtre (2e pli
+      pondéré à moitié). ~64% (4 joueurs) / ~58% (3 joueurs) de victoires
+      sur 50 parties contre des bots simples.
+    - **v2 (2026-07-10, même jour) : recherche exacte de fin de manche.**
+      Remplace le lookahead à 2 plis par une recherche exhaustive
+      (minimax à un seul agent branchant + élagage + table de
+      transposition, voir les commentaires détaillés en tête de
+      `game/botAI_expert.js`) dès qu'il reste au plus
+      `EXACT_SEARCH_MAX_REMAINING_TRICKS` (6) plis à jouer — sinon repli sur
+      le lookahead à 2 plis (v1, conservé tel quel dans le même fichier),
+      hors de portée d'une recherche exacte jusqu'au bout aussi tôt dans la
+      manche. Simplification clé qui rend la recherche exacte calculable :
+      les AUTRES joueurs sont modélisés comme suivant l'heuristique simple
+      de `botAI.js` en politique FIXE et déterministe (un seul coup à
+      explorer à leur tour, aucun branchement) — seuls les tours de Sergio
+      branchent réellement sur tous ses coups légaux, ce qui réduit
+      l'arbre à une seule décision répétée plutôt qu'un vrai minimax
+      adversarial à N joueurs. Élagage par minorant (`nodeLowerBound`) :
+      dès qu'un adversaire a pris au moins une copa dans la simulation, un
+      balayage complet des 10 copas devient impossible pour Sergio, ce qui
+      rend le coût du nœud strictement croissant sur le reste de la plage
+      — un minorant beaucoup plus utile que le simple 0 global utilisé tant
+      que ce n'est pas encore le cas. Un budget de temps dur
+      (`EXACT_SEARCH_TIME_BUDGET_MS`, 200ms — la recherche est
+      synchrone/bloquante, Node étant mono-thread, donc tout le serveur en
+      pâtirait si ce budget était plus généreux) fait abandonner
+      proprement la recherche exacte au profit du lookahead à 2 plis si
+      jamais dépassé ; en pratique, jamais observé au-delà de quelques ms
+      même dans le scénario le plus défavorable construit exprès pour ce
+      chantier (6 plis restants, branchement maximal — voir
+      `botAI_expert.test.js`).
+      **Évaluation d'un dénouement de manche tenant compte des points en
+      suspens** (`evaluateFinalCost`, remplace un simple comptage de copas) :
+      reproduit exactement la mécanique de `engine.applyHandResultToScores`
+      pour Sergio seul — 0 copa efface tout suspens existant (coût 0,
+      activement recherché s'il y a un suspens à effacer) ; 1-9 copas
+      réalise tout le suspens existant EN PLUS de ces copas (coût très
+      élevé) ; 10 copas d'un coup n'ajoute rien au score réel immédiat,
+      seulement au suspens, pondéré à `SUSPENDED_RISK_WEIGHT` (0.5, choix
+      empirique) plutôt que compté plein pot — ce qui fait naturellement
+      préférer un balayage complet des 10 copas à en réaliser plus de 5
+      normalement, y compris SANS suspens préexistant (0.5×10 = 5 < 6, 7,
+      8 ou 9), une "tolérance" pour le cas où prendre les 10 est le seul
+      moyen d'éviter pire. Testé par simulation de dizaines de parties
+      complètes (`game/botAI_expert.test.js`, seuils de non-régression
+      relevés en conséquence) : ~80-94% de victoires (4 joueurs) / ~78-96%
+      (3 joueurs) sur plusieurs essais de 50 parties contre des bots
+      simples, nette amélioration par rapport à la v1 (~64%/~58%), sans
+      jamais tenter de coup illégal ni ralentissement perceptible mesuré
+      (quelques ms par décision en pratique, budget dur à 200ms).
 - **Colonnes de `.trick-slots` dynamiques selon `hand.numPlayers`**
   (`.trick-slots-3`/`.trick-slots-4` dans `style.css`, classe posée par
   `renderGame()` dans `client.js`) : les cartes du pli en cours tiennent

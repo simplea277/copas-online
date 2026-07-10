@@ -133,6 +133,90 @@ test('Accès complet vérifié : préfère un coup sans risque grâce à la conn
   assert.ok(playable.some((c) => c.suit === choice.suit && c.rank === choice.rank), 'doit rester un coup légal');
 });
 
+test('Points en suspens : préfère un coup qui termine la manche à 0 copa plutôt qu\'un coup qui en garantit au moins une', () => {
+  // 4 joueurs, 2 plis restants. Sergio a le choix entre ouvrir avec sa copa
+  // (personne d'autre n'en a : il remporte alors ce pli, quelle que soit la
+  // carte jouée par les autres — le pli se conclut forcément par la
+  // couleur "copas", et lui seul en a) ou ouvrir avec son paus (D le
+  // remporte alors avec son paus le plus fort, forçant tout le monde à
+  // suivre paus ; au pli suivant, Sergio est forcé de jouer sa copa mais
+  // celle-ci n'est plus la couleur demandée — D remporte aussi ce pli en
+  // espadas, et récupère donc la copa de Sergio au passage). Avec des
+  // points déjà en suspens, prendre ne serait-ce qu'une seule copa cette
+  // manche les réaliserait tous — un coût bien pire que le seul risque
+  // "normal" (sans suspens) de perdre 1 copa.
+  const players = ['Sergio', 'B', 'C', 'D'];
+  const hand = engine.dealNewHand(players, 0);
+  hand.tricksPlayed = 8; // 4 joueurs, 10 plis au total : il en reste 2
+  hand.hands = {
+    Sergio: [card('copas', 'as'), card('paus', '2')],
+    B: [card('espadas', '2'), card('paus', '3')],
+    C: [card('espadas', '3'), card('paus', '4')],
+    D: [card('espadas', '4'), card('paus', '5')],
+  };
+  hand.drawPile = [];
+  hand.currentTrick = [];
+  hand.playedCards = [];
+  hand.turnIndex = 0; // Sergio ouvre
+
+  const scores = {
+    Sergio: { real: 20, suspended: 10 },
+    B: { real: 0, suspended: 0 },
+    C: { real: 0, suspended: 0 },
+    D: { real: 0, suspended: 0 },
+  };
+
+  const choice = chooseBotCard(hand, 'Sergio', scores);
+  assert.strictEqual(choice.suit, 'paus', 'devrait garder sa copa en réserve plutôt que la jouer et remporter le pli avec, points en suspens en jeu');
+
+  // Rejoue la manche jusqu'au bout (les autres suivent l'heuristique
+  // simple, déterministe) pour confirmer que ce choix mène bien à 0 copa
+  // ramassée au final, et pas seulement à un pli sans copa isolé.
+  let guard = 0;
+  while (!hand.finished && guard < 20) {
+    guard += 1;
+    const currentId = hand.players[hand.turnIndex];
+    const c = currentId === 'Sergio' ? chooseBotCard(hand, currentId, scores) : basicAI.chooseBotCard(hand, currentId);
+    const res = engine.playCard(hand, currentId, c);
+    assert.ok(res.ok, res.error);
+  }
+  assert.strictEqual(hand.tricksWonCopas.Sergio, 0, 'devrait terminer la manche sans avoir ramassé la moindre copa');
+});
+
+test('Recherche exacte : reste rapide même dans le cas le plus coûteux (6 plis restants, branchement maximal)', () => {
+  // Scénario délibérément difficile : pile EXACT_SEARCH_MAX_REMAINING_TRICKS
+  // (6) plis restants, Sergio ouvre (branchement maximal : 6 coups légaux
+  // à son 1er tour) avec peu de contrainte de couleur pour la suite.
+  const players = ['Sergio', 'B', 'C', 'D'];
+  const hand = engine.dealNewHand(players, 0);
+  hand.tricksPlayed = 4; // 4 joueurs, 10 plis au total : il en reste 6
+  hand.hands = {
+    Sergio: [card('espadas', '2'), card('espadas', '3'), card('ouros', '2'), card('ouros', '3'), card('paus', '2'), card('paus', '3')],
+    B: [card('espadas', '4'), card('espadas', '5'), card('ouros', '4'), card('ouros', '5'), card('paus', '4'), card('paus', '5')],
+    C: [card('espadas', '6'), card('espadas', 'valete'), card('ouros', '6'), card('ouros', 'valete'), card('paus', '6'), card('paus', 'valete')],
+    D: [card('espadas', 'dama'), card('espadas', 'rei'), card('ouros', 'dama'), card('ouros', 'rei'), card('paus', 'dama'), card('paus', 'rei')],
+  };
+  hand.drawPile = [];
+  hand.currentTrick = [];
+  hand.playedCards = [];
+  hand.turnIndex = 0;
+
+  const scores = {
+    Sergio: { real: 22, suspended: 10 }, // profil prudent, pour ne pas court-circuiter la recherche via le repli
+    B: { real: 0, suspended: 0 },
+    C: { real: 0, suspended: 0 },
+    D: { real: 0, suspended: 0 },
+  };
+
+  const started = Date.now();
+  const choice = chooseBotCard(hand, 'Sergio', scores);
+  const elapsed = Date.now() - started;
+
+  const playable = engine.getPlayableCards(hand, 'Sergio');
+  assert.ok(playable.some((c) => c.suit === choice.suit && c.rank === choice.rank), 'doit rester un coup légal');
+  assert.ok(elapsed < 400, `la décision ne devrait jamais prendre plus de quelques centaines de ms (budget interne 200ms) ; observé : ${elapsed}ms`);
+});
+
 // ---------------------------------------------------------------------------
 // Jamais de coup illégal, sur des manches complètes.
 // ---------------------------------------------------------------------------
@@ -232,13 +316,18 @@ test('Simulation de parties complètes (4 joueurs) : Sergio gagne nettement plus
   // qu'un simple seuil sur le taux de victoire brut à N=30 : le taux de
   // victoire doit nettement dépasser le hasard pur (25% à 4 joueurs), ET son
   // score réel moyen doit rester nettement sous celui des adversaires.
+  // Seuils relevés le 2026-07-10 après le passage à la recherche exacte de
+  // fin de manche (voir botAI_expert.js) : ~86-94% observé sur plusieurs
+  // essais de 50 parties (contre ~64% avec l'ancien lookahead à 2 plis
+  // seul) — 0.65 garde une marge confortable sous cette observation tout en
+  // constituant un garde-fou de non-régression bien plus strict qu'avant.
   assert.ok(
-    winRate > 0.4,
-    `Sergio devrait gagner nettement plus qu'un quart des parties (hasard pur) ; observé : ${(winRate * 100).toFixed(0)}%`
+    winRate > 0.65,
+    `Sergio devrait gagner très nettement plus souvent qu'avant la recherche exacte de fin de manche ; observé : ${(winRate * 100).toFixed(0)}%`
   );
   assert.ok(
-    avgSergio < avgOthers * 0.75,
-    `score réel moyen de Sergio devrait rester nettement sous celui des adversaires ; observé : ${avgSergio.toFixed(1)} vs ${avgOthers.toFixed(1)}`
+    avgSergio < avgOthers * 0.5,
+    `score réel moyen de Sergio devrait rester très nettement sous celui des adversaires ; observé : ${avgSergio.toFixed(1)} vs ${avgOthers.toFixed(1)}`
   );
 });
 
@@ -258,13 +347,16 @@ test('Simulation de parties complètes (3 joueurs) : Sergio gagne nettement plus
   const avgSergio = totals.Sergio / N;
   const avgOthers = (totals.A + totals.B) / (2 * N);
   console.log(`    (taux de victoire de Sergio sur ${N} parties à 3 joueurs : ${(winRate * 100).toFixed(0)}% — score moyen: Sergio ${avgSergio.toFixed(1)} vs adversaires ${avgOthers.toFixed(1)})`);
+  // Seuils relevés le 2026-07-10 (voir le commentaire équivalent ci-dessus,
+  // à 4 joueurs) : ~82-96% observé sur plusieurs essais de 50 parties
+  // (contre ~58% avec l'ancien lookahead à 2 plis seul).
   assert.ok(
-    winRate > 0.45,
-    `Sergio devrait gagner nettement plus qu'un tiers des parties (hasard pur) ; observé : ${(winRate * 100).toFixed(0)}%`
+    winRate > 0.7,
+    `Sergio devrait gagner très nettement plus souvent qu'avant la recherche exacte de fin de manche ; observé : ${(winRate * 100).toFixed(0)}%`
   );
   assert.ok(
-    avgSergio < avgOthers * 0.75,
-    `score réel moyen de Sergio devrait rester nettement sous celui des adversaires ; observé : ${avgSergio.toFixed(1)} vs ${avgOthers.toFixed(1)}`
+    avgSergio < avgOthers * 0.5,
+    `score réel moyen de Sergio devrait rester très nettement sous celui des adversaires ; observé : ${avgSergio.toFixed(1)} vs ${avgOthers.toFixed(1)}`
   );
 });
 
