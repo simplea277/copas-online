@@ -575,6 +575,17 @@ cache dans `%LOCALAPPDATA%\ms-playwright` sous Windows).
 
 ## Comment redéployer (Render)
 
+**Depuis le 2026-07-10, l'utilisateur préfère un commit + push automatique**
+une fois une fonctionnalité implémentée et auto-vérifiée (tests + script
+Playwright/socket.io-client temporaire, voir "Comment tester" plus haut),
+**sans attendre un "commit et push" explicite à chaque fois** — contraire à
+la préférence précédente ("ne jamais committer sans demande explicite").
+Rester quand même prudent : ce feu vert couvre le cycle normal
+implémenter → tester → committer → pousser → vérifier le déploiement Render
+sur `main`, pas les opérations destructives/ambiguës (force push, reset
+--hard, etc.), qui continuent de nécessiter une confirmation explicite comme
+d'habitude.
+
 Le déploiement se fait via GitHub → Render :
 
 1. Committer et pousser sur `main` :
