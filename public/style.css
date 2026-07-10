@@ -980,12 +980,17 @@ button.secondary {
 
 /* Pastille "points en suspens" — ancrée au coin haut-droit du siège
    (.seat, voir plus haut ; toujours positionnée relative à ce conteneur,
-   qu'il s'agisse d'un adversaire ou de mon propre siège) en miroir du
-   badge donneur au coin haut-gauche (même recette d'anneau
-   `0 0 0 2px var(--felt)` pour se détacher du fond du siège). Volontairement
+   qu'il s'agisse d'un adversaire ou de mon propre siège). Volontairement
    compacte (juste le chiffre, pas la phrase complète) : un bandeau plus
    large a été jugé trop imposant — le nombre seul suffit avec l'info-bulle
-   (title) pour qui veut le détail exact. */
+   (title) pour qui veut le détail exact.
+   Pas d'anneau `0 0 0 2px var(--felt)` façon badge donneur ici (essayé puis
+   retiré) : cette pastille est une pilule à largeur variable (2 chiffres
+   avec le "+" devant l'élargissent), pas un cercle de taille fixe comme le
+   badge donneur — posée au coin du siège, à cheval sur son fond clair et
+   sur le tapis plus sombre juste à côté, l'anneau y ressortait comme un
+   petit rectangle vert bien visible au lieu de se fondre discrètement.
+   Seule une ombre portée neutre reste, pour le relief. */
 .suspended-float {
   position: absolute;
   top: -9px;
@@ -1003,7 +1008,7 @@ button.secondary {
   line-height: 1;
   border-radius: 50%;
   animation: floaty 2.2s ease-in-out infinite;
-  box-shadow: 0 3px 8px rgba(0,0,0,0.4), 0 0 0 2px var(--felt);
+  box-shadow: 0 3px 8px rgba(0,0,0,0.4);
   cursor: default;
 }
 @keyframes floaty {
