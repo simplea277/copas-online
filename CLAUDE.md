@@ -43,11 +43,10 @@ retrait de l'emoji robot 🤖 à côté du nom des bots partout où il
 apparaissait (le préfixe "Bot" et la colombe 🕊️ de Bot Rose, qui font
 partie du nom lui-même, restent inchangés) ; et une refonte de la
 disposition de l'écran de jeu en "table" (voir décisions techniques
-ci-dessous). Tout est testé et confirmé fonctionnel par l'utilisateur à ces
-dates, sauf mention contraire ci-dessous — **la refonte de disposition en
-table est la seule exception à ce jour** : implémentée et auto-vérifiée
-(Playwright, voir décisions techniques), pas encore rejouée en conditions
-réelles par l'utilisateur.
+ci-dessous), confirmée par l'utilisateur ("ça me convient bien pour
+l'instant" — validation initiale, pas encore un essai prolongé en partie
+complète). Tout est testé et confirmé fonctionnel par l'utilisateur à ces
+dates, sauf mention contraire ci-dessous.
 
 ## Stack et architecture
 
