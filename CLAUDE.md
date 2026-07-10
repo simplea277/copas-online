@@ -28,13 +28,22 @@ l'écran, vibration du téléphone au passage de tour) avant d'être
 entièrement abandonnées sur demande de l'utilisateur, qui a préféré revenir
 à l'indicateur d'origine (bordure dorée simple sur les cartes jouables +
 message de statut texte) — voir "Fausses pistes essayées puis abandonnées"
-ci-dessous. Le 2026-07-10, un cinquième bot ("Bot Sergio") a été ajouté avec
-un niveau de jeu nettement supérieur aux 4 autres (voir décisions
-techniques ci-dessous), après une première tentative par déduction
-statistique + tirages aléatoires abandonnée en cours de route au profit
-d'un accès direct à l'état réel de la partie (voir "Fausses pistes"). Tout
-est testé et confirmé fonctionnel par l'utilisateur à ces dates, sauf
-mention contraire ci-dessous.
+ci-dessous. Le 2026-07-10, une session dense a ajouté : un cinquième bot
+("Bot Sergio") avec un niveau de jeu nettement supérieur aux 4 autres (voir
+décisions techniques ci-dessous), après une première tentative par
+déduction statistique + tirages aléatoires abandonnée en cours de route au
+profit d'un accès direct à l'état réel de la partie (voir "Fausses
+pistes") ; l'alignement des 4 cartes du pli sur une seule ligne à 4 joueurs
+(colonnes de grille dynamiques selon le nombre de joueurs, au lieu de 3
+fixes) ; un pseudo désormais obligatoire sur l'écran du mode solo (comme
+pour créer/rejoindre, nécessaire pour que l'easter egg Capu/Capucine/Kpu et
+l'affichage du nom fonctionnent aussi en solo) ; un chat textuel en temps
+réel entre joueurs du salon (voir décisions techniques ci-dessous) ; et le
+retrait de l'emoji robot 🤖 à côté du nom des bots partout où il
+apparaissait (le préfixe "Bot" et la colombe 🕊️ de Bot Rose, qui font
+partie du nom lui-même, restent inchangés). Tout est testé et confirmé
+fonctionnel par l'utilisateur à ces dates, sauf mention contraire
+ci-dessous.
 
 ## Stack et architecture
 
@@ -163,11 +172,16 @@ mention contraire ci-dessous.
   "dangereux" (contient des copas) selon qu'il peut ou non éviter de le
   gagner, défausse la copa la plus haute quand il ne peut pas suivre.
   - **Noms fixes, piochés sans doublon** : `BOT_NAMES` dans `server.js` =
-    `['Bot Tia', 'Bot Romaric', 'Bot Cyrano', 'Bot Rose 🕊️']` (liste demandée
-    par l'utilisateur, y compris l'emoji colombe sur "Rose"). `pickBotNames()`
+    `['Bot Tia', 'Bot Romaric', 'Bot Cyrano', 'Bot Rose 🕊️', 'Bot Sergio']`
+    (liste demandée par l'utilisateur, y compris l'emoji colombe sur "Rose" —
+    le seul emoji de nom de bot qui subsiste, voir plus bas). `pickBotNames()`
     mélange les noms non déjà utilisés dans le salon et les distribue un par
     un ; repli (concaténation d'un numéro) si jamais plus de bots que de noms
     sont nécessaires (cas qui ne devrait pas arriver vu `maxPlayers` ≤ 4).
+    Aucun emoji robot générique à côté du nom (badge `botBadge()`/
+    `.bot-badge` retiré le 2026-07-10, y compris dans le lobby et les
+    score-chips) : seul le préfixe "Bot" distingue un bot d'un humain à
+    l'affichage désormais.
   - **Rythme en deux temps** (`scheduleBotTurnIfNeeded`) : d'abord le temps
     qu'il reste avant la fin estimée des animations client en cours
     (`room.animationBusyUntil`, mis à jour par `markAnimationBusy()` à
@@ -217,6 +231,82 @@ mention contraire ci-dessous.
     nettement plus souvent que le hasard face à des bots simples (~65-70%
     de victoires contre ~25-33% attendu par pur hasard à 4/3 joueurs), sans
     jamais tenter de coup illégal.
+- **Colonnes de `.trick-slots` dynamiques selon `hand.numPlayers`**
+  (`.trick-slots-3`/`.trick-slots-4` dans `style.css`, classe posée par
+  `renderGame()` dans `client.js`) : les cartes du pli en cours tiennent
+  désormais toutes sur une seule ligne quel que soit le nombre de joueurs —
+  avant, la grille était fixée à 3 colonnes, ce qui renvoyait la 4ᵉ carte à
+  la ligne suivante en partie à 4 joueurs.
+- **Pseudo obligatoire sur l'écran du mode solo** (`renderSolo()` dans
+  `client.js`) : même champ/suggestions/validation que sur les écrans
+  "Créer"/"Rejoindre", au lieu d'un repli silencieux sur `'Moi'` côté
+  serveur. Nécessaire pour que le pseudo choisi (et donc l'easter egg
+  Capu/Capucine/Kpu, voir plus bas) fonctionne aussi en solo.
+- **Easter egg de tour pour les pseudos Capu/capu/Capucine/capucine/
+  Kpu/kpu** (`EASTER_EGG_NAMES` dans `client.js`) : quand c'est mon tour et
+  que mon pseudo (comparaison exacte, sensible à la casse, contre cette
+  liste précise) correspond, le message de statut devient
+  "À TOI DE JOUER CAPUCINE !!!" en majuscules et en taille très démesurée
+  (`clamp()`, calée empiriquement à 390×844 — voir le commentaire dans
+  `style.css` juste au-dessus de `.status-line-mega` pour le seuil exact
+  au-delà duquel ça provoque un défilement vertical constaté en
+  conditions réelles, à ne pas dépasser sans retester à cette taille
+  d'écran précise) avec un halo doré clignotant (`text-shadow` animé,
+  respecte `prefers-reduced-motion`). Uniquement visible sur l'écran de ce
+  joueur précis, jamais chez les autres. Un second texte ("C'est ton
+  tour !", ajouté puis retiré peu après sur demande de l'utilisateur — trop
+  d'éléments démesurés à la fois) et plusieurs paliers de taille ont été
+  essayés en cours de route avant d'aboutir à cette version ; sans rapport
+  avec le chantier "halo de tour" général (voir "Fausses pistes" plus bas),
+  parti d'une demande similaire ("rendre mon tour plus visible") mais visant
+  tous les joueurs plutôt que ces pseudos précis, et entièrement abandonné.
+- **Chat textuel du salon** (`server.js` + `client.js` + `style.css`,
+  2026-07-10) : panneau compact accessible en lobby et en partie, diffusé
+  par Socket.io à `room.code` (`chat:send` → `chat:message`), avec un
+  historique en mémoire côté serveur (`room.chatMessages`, plafonné à
+  `MAX_CHAT_HISTORY` = 100 entrées, jamais persisté au-delà — comme le
+  reste de l'état du jeu). Validation/nettoyage serveur indépendants de
+  toute limite côté client (`sanitizeChatText` dans `server.js`) : 200
+  caractères max (`MAX_CHAT_MESSAGE_LENGTH`), caractères de contrôle
+  retirés (`CONTROL_CHARS_PATTERN`, construit via `String.fromCharCode`
+  plutôt qu'une séquence d'échappement `\u`/`\x` dans le code source — un
+  bug d'édition a un jour introduit de vrais octets de contrôle littéraux
+  dans `server.js` en essayant d'écrire ce genre de séquence directement,
+  cassant le fichier ; `String.fromCharCode` évite cette classe de
+  problème), message vide/non-string rejeté. Les bots ne peuvent
+  techniquement pas envoyer de message (`chat:send` vérifie
+  `!player.isBot`), aucun socket réel de leur côté de toute façon.
+  - **DOM du chat entièrement hors du cycle `render()`/`app.innerHTML`**
+    (`#chat-root`, créé une fois par `ensureChatRoot()` dans `client.js` et
+    attaché directement à `<body>`, jamais régénéré ensuite) : nécessaire
+    car `render()` réécrit tout le `innerHTML` de `#app` à chaque
+    changement d'état (tour d'un adversaire, animations...), ce qui
+    détruisait et recréait le panneau de chat (et donc son `<input>`) à
+    chaque coup joué par quelqu'un d'autre — perte du focus et du texte en
+    cours de frappe à chaque interruption. Un nouveau message arrivé
+    (`chat:message`) est ajouté au DOM existant via `appendChatMessage()`
+    (un seul `appendChild`, jamais de reconstruction de la liste), sans
+    jamais appeler `render()` ni toucher à l'`<input>`. Les messages sont
+    insérés via `textContent` (pas `innerHTML`) : jamais interprétés comme
+    du HTML, aucun échappement manuel requis (testé avec une tentative
+    d'injection `<img src=x onerror=...>`, affichée telle quelle en texte).
+    Ouverture/fermeture du panneau via l'attribut `[hidden]` sur
+    `.chat-panel` (jamais retiré du DOM) — `.chat-panel[hidden] { display:
+    none; }` explicite dans `style.css`, sinon le `display:flex` de la
+    classe l'emporterait sur le comportement par défaut du navigateur pour
+    `[hidden]`.
+  - **Bulle positionnée dynamiquement au-dessus du bouton "Tri"**
+    (`repositionChatWidget()`, mesure `#btn-sort-toggle` via
+    `getBoundingClientRect()` à chaque render du jeu + au resize) plutôt
+    qu'une position fixe en dur, car la position réelle de ce bouton varie
+    selon l'écran (hauteur de viewport, 3 vs 4 joueurs, bannière de phase
+    spéciale...). Repli sur une position fixe bas-gauche quand ce bouton
+    n'existe pas encore (lobby, avant que la partie ne démarre).
+  - Historique initial reçu via `room:create`/`room:join`/`session:resume`
+    (`res.chat`, champ ajouté à leurs callbacks côté serveur) ; seed
+    unique via `initChatForRoom()`, qui appelle `renderChatHistory()` une
+    fois pour construire la liste de départ (seul endroit qui reconstruit
+    tout le DOM des messages d'un coup).
 - **Section "Règles du jeu"** (`renderRulesOverlay` dans `client.js`) :
   overlay accessible depuis l'accueil (onglets 3/4 joueurs, celui à 3 actif
   par défaut) et depuis une partie en cours (version correspondant au nombre
@@ -453,12 +543,20 @@ mention contraire ci-dessous.
 ```bash
 cd copas-game
 npm install
-npm test        # tests unitaires du moteur (game/engine.test.js) — doivent tous passer
+npm test        # engine.test.js + botAI.test.js + botAI_expert.test.js — doivent tous passer
 npm start        # démarre le serveur sur le port 3000 (ou $PORT)
 ```
 
 Ouvrir `http://localhost:3000` dans plusieurs onglets pour simuler plusieurs
 joueurs.
+
+**`npm test` a un test flaky préexistant, sans rapport avec les sessions de
+développement récentes** : "Simulation complète d'une manche à 3 (ou 4)
+joueurs..." échoue occasionnellement (observé plusieurs fois lors de
+sessions différentes, toujours résolu par une simple relance) — cause
+exacte non creusée, vraisemblablement une combinaison de mains rare dans la
+simulation aléatoire. Si `npm test` échoue sur CE test précis et sur rien
+d'autre, relancer avant de creuser plus loin.
 
 **Pour un test de bout en bout plus poussé** (comme fait au fil de cette
 session) : installer temporairement `socket.io-client` et/ou `playwright` avec
