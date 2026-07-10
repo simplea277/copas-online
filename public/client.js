@@ -1312,7 +1312,7 @@ function renderGame() {
   // juste le chiffre, avec l'info-bulle pour le détail — un ancien bandeau
   // "X en suspens" en toutes lettres a été jugé trop imposant.
   const renderSuspendedBadge = (suspended) =>
-    suspended > 0 ? `<div class="suspended-float" title="${suspended} points en suspens">${suspended}</div>` : '';
+    suspended > 0 ? `<div class="suspended-float" title="${suspended} points en suspens">+${suspended}</div>` : '';
 
   // Position de chaque adversaire autour de la table (disposition "sièges"),
   // dérivée de l'index dans `others` (lui-même dans l'ordre fixe de
