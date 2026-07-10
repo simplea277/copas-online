@@ -1031,3 +1031,167 @@ button.secondary {
 @media (min-width: 520px) {
   .pcard { width: 62px; height: 86px; }
 }
+
+/* ---------- Chat du salon ---------- */
+
+/* Bulle fixe positionnée dynamiquement au-dessus du bouton "Tri" de ma main
+   (voir repositionChatWidget() dans client.js, qui fixe left/bottom en
+   inline en mesurant #btn-sort-toggle à chaque render du jeu — jamais en
+   dur ici, sa position réelle varie selon l'écran). left/bottom ci-dessous
+   ne servent donc que de repli tant que ce bouton n'existe pas encore
+   (lobby, avant que la partie ne démarre). flex-direction: column-reverse +
+   le bouton en dernier dans le HTML = le panneau s'ouvre visuellement vers
+   le haut à partir du bouton, qui reste toujours au même endroit, ouvert ou
+   fermé. Ce widget vit dans #chat-root, un conteneur à part rattaché
+   directement à <body> (jamais recréé par render()) : voir ensureChatRoot()
+   dans client.js pour pourquoi (préserver le focus/texte en cours de frappe
+   quel que soit ce qui se passe sur la table de jeu). */
+.chat-widget {
+  position: fixed;
+  left: 12px;
+  bottom: calc(env(safe-area-inset-bottom, 10px) + 10px);
+  z-index: 58; /* sous .hud-btn (60), au-dessus du reste */
+  display: flex;
+  flex-direction: column-reverse;
+  align-items: flex-start;
+  gap: 8px;
+}
+.chat-toggle-btn {
+  position: relative;
+  width: 44px;
+  height: 44px;
+  min-width: 44px;
+  border-radius: 50%;
+  border: 1px solid rgba(245,239,224,0.25);
+  background: rgba(10,20,15,0.7);
+  backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.3rem;
+  line-height: 1;
+  cursor: pointer;
+  transition: border-color 0.15s ease;
+}
+.chat-toggle-btn:hover { border-color: rgba(245,239,224,0.45); }
+.chat-unread-badge {
+  position: absolute;
+  top: -3px;
+  right: -3px;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 4px;
+  border-radius: 9px;
+  background: var(--copas-bright);
+  color: var(--ivory);
+  font-size: 0.65rem;
+  font-weight: 800;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.4);
+}
+.chat-unread-badge[hidden] { display: none; }
+
+/* Panneau compact plutôt qu'un plein écran : largeur/hauteur plafonnées
+   pour ne jamais dominer l'espace de jeu, même sur un petit téléphone.
+   Ouvert/fermé via l'attribut [hidden] (voir setChatOpen dans client.js) —
+   jamais recréé/retiré du DOM, pour ne jamais perdre le focus ni le texte
+   en cours de frappe dans son <input>. display:flex ci-dessous l'emporterait
+   sinon sur le display:none par défaut du navigateur pour [hidden]. */
+.chat-panel {
+  width: min(280px, calc(100vw - 24px));
+  max-height: min(360px, 50vh);
+  display: flex;
+  flex-direction: column;
+  background: rgba(10,20,15,0.9);
+  border: 1px solid rgba(245,239,224,0.2);
+  border-radius: 14px;
+  backdrop-filter: blur(6px);
+  overflow: hidden;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.45);
+}
+.chat-panel[hidden] { display: none; }
+.chat-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 10px;
+  border-bottom: 1px solid rgba(245,239,224,0.15);
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--ivory-dim);
+  flex-shrink: 0;
+}
+.chat-close-btn {
+  background: none;
+  border: none;
+  color: var(--ivory-dim);
+  font-size: 0.9rem;
+  cursor: pointer;
+  padding: 2px 4px;
+}
+.chat-close-btn:hover { color: var(--ivory); }
+.chat-messages {
+  flex: 1;
+  min-height: 80px;
+  overflow-y: auto;
+  padding: 8px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  -webkit-overflow-scrolling: touch;
+}
+.chat-empty {
+  color: var(--ivory-dim);
+  font-size: 0.78rem;
+  text-align: center;
+  padding: 12px 0;
+}
+.chat-message {
+  font-size: 0.82rem;
+  line-height: 1.35;
+  overflow-wrap: break-word;
+}
+.chat-message-name {
+  font-weight: 700;
+  color: var(--gold);
+  margin-right: 5px;
+}
+/* Mes propres messages : couleur distincte pour les repérer d'un coup
+   d'œil dans l'historique, sans avoir à comparer les noms à chaque ligne. */
+.chat-message.mine .chat-message-name { color: var(--azulejo-light); }
+.chat-message-text { color: var(--ivory); }
+
+.chat-form {
+  display: flex;
+  gap: 6px;
+  padding: 8px;
+  border-top: 1px solid rgba(245,239,224,0.15);
+  flex-shrink: 0;
+}
+/* Surcharge le style générique input[type="text"] (padding/marge pensés
+   pour les formulaires pleine largeur des écrans d'accueil), pour rester
+   compact dans la barre d'envoi du chat. */
+.chat-form input[type="text"] {
+  flex: 1;
+  min-width: 0;
+  width: auto;
+  padding: 8px 10px;
+  margin-bottom: 0;
+  font-size: 0.85rem;
+  border-radius: 10px;
+}
+.chat-send-btn {
+  width: 36px;
+  min-width: 36px;
+  border-radius: 10px;
+  border: none;
+  background: var(--gold);
+  color: var(--ink);
+  font-size: 1rem;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.chat-send-btn:hover { filter: brightness(1.08); }

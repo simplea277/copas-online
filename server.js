@@ -365,6 +365,41 @@ function isValidCard(card) {
     && engine.RANKS.includes(card.rank);
 }
 
+// ----------------------------------------------------------------------------
+// Chat textuel du salon : en mémoire uniquement (room.chatMessages), comme
+// le reste de l'état du jeu — se perd si le serveur redémarre, aucune
+// persistance voulue ici. MAX_CHAT_HISTORY plafonne la mémoire d'un salon
+// qui resterait ouvert longtemps (les plus anciens messages sont perdus
+// silencieusement au-delà, jamais renvoyés à qui que ce soit de toute façon
+// une fois hors de l'historique gardé côté serveur).
+// ----------------------------------------------------------------------------
+const MAX_CHAT_MESSAGE_LENGTH = 200;
+const MAX_CHAT_HISTORY = 100;
+
+/**
+ * Retire les caractères de contrôle (dont les retours à la ligne — un chat
+ * sur une ligne reste plus simple à afficher/lire dans le panneau compact
+ * visé), coupe les espaces superflus et plafonne la longueur. `null` si le
+ * message est invalide ou vide après nettoyage (jamais diffusé dans ce cas).
+ * Ne s'occupe PAS d'échapper le HTML : ça reste la responsabilité de
+ * l'affichage (jamais de innerHTML avec le texte brut, voir escapeHtml côté
+ * client) — un texte nettoyé mais non échappé stocké tel quel reste sûr tant
+ * qu'il n'est affiché qu'en passant par cet échappement à l'affichage.
+ * Motif construit via String.fromCharCode plutôt qu'une séquence
+ * d'échappement \u.../\x... dans le code source, pour rester sans ambiguïté.
+ */
+const CONTROL_CHARS_PATTERN = new RegExp(
+  '[' + String.fromCharCode(0) + '-' + String.fromCharCode(31) + String.fromCharCode(127) + ']',
+  'g'
+);
+function sanitizeChatText(text) {
+  if (typeof text !== 'string') return null;
+  const stripped = text.replace(CONTROL_CHARS_PATTERN, ' ');
+  const trimmed = stripped.trim();
+  if (!trimmed) return null;
+  return trimmed.slice(0, MAX_CHAT_MESSAGE_LENGTH);
+}
+
 /**
  * Enveloppe un gestionnaire socket.io pour qu'une exception inattendue
  * (bug du moteur, payload malformé...) ne fasse jamais planter tout le
@@ -416,12 +451,13 @@ io.on('connection', (socket) => {
       scores: null,
       currentHand: null,
       animationBusyUntil: 0,
+      chatMessages: [],
     };
     rooms[code] = room;
     socket.join(code);
     socket.data.roomCode = code;
     socket.data.playerId = playerId;
-    callback?.({ ok: true, room: publicRoomState(room), playerId, sessionToken });
+    callback?.({ ok: true, room: publicRoomState(room), playerId, sessionToken, chat: room.chatMessages });
     broadcastRoomState(room);
   }));
 
@@ -453,7 +489,7 @@ io.on('connection', (socket) => {
     socket.join(room.code);
     socket.data.roomCode = room.code;
     socket.data.playerId = playerId;
-    callback?.({ ok: true, room: publicRoomState(room), playerId, sessionToken });
+    callback?.({ ok: true, room: publicRoomState(room), playerId, sessionToken, chat: room.chatMessages });
     broadcastRoomState(room);
   }));
 
@@ -505,9 +541,41 @@ io.on('connection', (socket) => {
       playerId: player.playerId,
       sessionToken: player.sessionToken,
       hand: room.currentHand ? handViewForPlayer(room, player.playerId) : null,
+      chat: room.chatMessages,
     });
     broadcastRoomState(room);
     if (room.currentHand) broadcastHandState(room);
+  }));
+
+  // Chat textuel du salon : diffusé à tout le monde dans room.code (y
+  // compris pendant la partie, en parallèle du jeu — aucune interaction
+  // avec le moteur de jeu, juste un envoi socket de plus). Un bot n'a
+  // jamais de socket connecté, donc ne peut techniquement pas déclencher cet
+  // événement ; le garde-fou `player.isBot` ci-dessous n'est là que pour ne
+  // jamais générer de message "au nom" d'un bot si ce contrat venait à
+  // changer un jour.
+  socket.on('chat:send', withErrorHandling('chat:send', (payload, callback) => {
+    const room = rooms[socket.data.roomCode];
+    if (!room) return callback?.({ ok: false, error: 'Salon introuvable.' });
+
+    const player = room.players.find((p) => p.playerId === socket.data.playerId);
+    if (!player || player.isBot) return callback?.({ ok: false, error: 'Joueur invalide.' });
+
+    const text = sanitizeChatText(payload?.text);
+    if (!text) return callback?.({ ok: false, error: 'Message vide.' });
+
+    const message = {
+      id: crypto.randomUUID(),
+      playerId: player.playerId,
+      name: player.name,
+      text,
+      ts: Date.now(),
+    };
+    room.chatMessages.push(message);
+    if (room.chatMessages.length > MAX_CHAT_HISTORY) room.chatMessages.shift();
+
+    io.to(room.code).emit('chat:message', message);
+    callback?.({ ok: true });
   }));
 
   // Un joueur quitte volontairement le salon (bouton "Quitter la partie").

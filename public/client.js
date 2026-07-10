@@ -98,6 +98,10 @@ function leaveGame() {
   state.soloStarting = false;
   state.pendingTrickSlots = [];
   state.trickBeingResolved = null;
+  state.chatMessages = [];
+  state.chatUnread = 0;
+  setChatOpen(false);
+  setChatVisible(false);
   pendingTrickResultFlyFn = null;
   render();
 }
@@ -175,6 +179,17 @@ const state = {
                             // de source pour les N-1 cartes déjà posées pendant que la
                             // dernière carte du pli finit d'arriver (hand.currentTrick est
                             // déjà vidé à ce moment-là par le hand:update qui a suivi).
+
+  chatMessages: [], // { id, playerId, name, text, ts }, seedé depuis room:create/room:join/
+                    // session:resume (historique déjà en mémoire côté serveur pour ce salon)
+                    // puis complété en direct par chat:message ; jamais vidé entre les manches,
+                    // seulement à leaveGame() (le salon lui-même change). Le DOM du chat
+                    // (#chat-root, voir plus bas) vit hors du cycle de render() habituel : ce
+                    // tableau ne sert plus qu'à retrouver l'historique/le playerId, pas à
+                    // reconstruire l'affichage à chaque changement d'état.
+  chatOpen: false,  // panneau de chat déplié ou non ; indépendant de l'écran (lobby/jeu)
+  chatUnread: 0,    // nombre de messages arrivés depuis la dernière fermeture/ouverture du
+                    // panneau ; remis à 0 dès l'ouverture, jamais compté quand déjà ouvert
 };
 
 let dealAnimCounter = 0;
@@ -930,6 +945,7 @@ function renderCreate() {
       if (!res.ok) { state.error = res.error; render(); return; }
       state.myId = res.playerId;
       state.room = res.room;
+      initChatForRoom(res.chat);
       saveSession({ code: res.room.code, sessionToken: res.sessionToken });
       state.screen = 'lobby';
       render();
@@ -965,6 +981,7 @@ function renderJoin() {
       if (!res.ok) { state.error = res.error; render(); return; }
       state.myId = res.playerId;
       state.room = res.room;
+      initChatForRoom(res.chat);
       saveSession({ code: res.room.code, sessionToken: res.sessionToken });
       state.screen = 'lobby';
       render();
@@ -1014,6 +1031,7 @@ function renderSolo() {
       if (!res.ok) { state.error = res.error; state.soloStarting = false; render(); return; }
       state.myId = res.playerId;
       state.room = res.room;
+      initChatForRoom(res.chat);
       saveSession({ code: res.room.code, sessionToken: res.sessionToken });
 
       socket.emit('room:fillBots', {}, (fillRes) => {
@@ -1081,6 +1099,7 @@ function renderLobby() {
   }
 
   document.getElementById('btn-leave-lobby').onclick = () => leaveGame();
+  repositionChatWidget();
 }
 
 // Widget fixe sur le côté droit de l'écran : le tas des plis joués (cartes
@@ -1106,6 +1125,177 @@ function renderLastTrickWidget() {
     <div class="last-trick-label">Dernier pli — ${playerName(t.winnerId)}${t.copasInTrick > 0 ? ` (+${t.copasInTrick} ${SUIT_SVG.copas})` : ''}</div>
     <div class="last-trick-cards">${t.trick.map((e) => renderCard(e.card, 'mini')).join('')}</div>
   </div>`;
+}
+
+// ---------------------------------------------------------------------------
+// Chat du salon — DOM entièrement indépendant du cycle habituel de
+// render()/app.innerHTML.
+//
+// Pourquoi : render() régénère TOUT le innerHTML de #app à chaque
+// changement d'état (hand:update, résolution de pli, animations...), ce qui
+// détruisait et recréait le panneau de chat (et donc son <input>) à chaque
+// coup d'un adversaire — perte du focus et du texte en cours de frappe.
+// Un joueur qui tapait un message pendant que quelqu'un d'autre jouait une
+// carte se faisait couper au milieu de sa phrase, panneau refermé.
+//
+// Solution : un conteneur #chat-root, créé une seule fois (ensureChatRoot)
+// et rattaché directement à <body>, donc HORS de #app et jamais touché par
+// render(). Toutes les fonctions ci-dessous manipulent ce DOM directement
+// (createElement/appendChild/textContent), jamais via une réécriture
+// d'innerHTML : l'<input> et le reste du panneau restent le MÊME nœud DOM
+// du moment où on rejoint un salon jusqu'à ce qu'on le quitte, quel que
+// soit ce qui se passe par ailleurs sur la table de jeu. textContent (pas
+// innerHTML) pour le nom/texte de chaque message : jamais interprété comme
+// du HTML, donc pas besoin d'échappement manuel ici.
+// ---------------------------------------------------------------------------
+
+let chatRootEl = null;
+
+function ensureChatRoot() {
+  if (chatRootEl) return;
+
+  chatRootEl = document.createElement('div');
+  chatRootEl.id = 'chat-root';
+  chatRootEl.innerHTML = `
+    <div class="chat-widget">
+      <div class="chat-panel" id="chat-panel" hidden>
+        <div class="chat-panel-header">
+          <span>Chat du salon</span>
+          <button type="button" class="chat-close-btn" id="btn-chat-close" aria-label="Fermer le chat">✕</button>
+        </div>
+        <div class="chat-messages" id="chat-messages"></div>
+        <form class="chat-form" id="chat-form">
+          <input type="text" id="chat-input" maxlength="200" placeholder="Message…" autocomplete="off" />
+          <button type="submit" class="chat-send-btn" aria-label="Envoyer">➤</button>
+        </form>
+      </div>
+      <button type="button" class="chat-toggle-btn" id="btn-chat-toggle" aria-label="Ouvrir le chat" title="Chat">
+        💬<span class="chat-unread-badge" id="chat-unread-badge" hidden></span>
+      </button>
+    </div>`;
+  document.body.appendChild(chatRootEl);
+
+  // Câblage une seule fois : ces éléments ne sont plus jamais recréés
+  // ensuite, donc pas besoin de les re-brancher à chaque render() du jeu.
+  document.getElementById('btn-chat-toggle').onclick = () => setChatOpen(!state.chatOpen);
+  document.getElementById('btn-chat-close').onclick = () => setChatOpen(false);
+  document.getElementById('chat-form').onsubmit = (e) => {
+    e.preventDefault();
+    const input = document.getElementById('chat-input');
+    const text = input.value.trim();
+    if (!text) return;
+    input.value = '';
+    socket.emit('chat:send', { text });
+  };
+
+  window.addEventListener('resize', repositionChatWidget);
+}
+
+function setChatVisible(visible) {
+  ensureChatRoot();
+  chatRootEl.style.display = visible ? '' : 'none';
+  if (visible) repositionChatWidget();
+}
+
+function setChatOpen(open) {
+  state.chatOpen = open;
+  const panel = document.getElementById('chat-panel');
+  if (panel) panel.hidden = !open;
+  const toggleBtn = document.getElementById('btn-chat-toggle');
+  if (toggleBtn) toggleBtn.setAttribute('aria-label', open ? 'Fermer le chat' : 'Ouvrir le chat');
+  if (open) {
+    state.chatUnread = 0;
+    updateChatUnreadBadge();
+    const messagesEl = document.getElementById('chat-messages');
+    if (messagesEl) messagesEl.scrollTop = messagesEl.scrollHeight;
+    document.getElementById('chat-input')?.focus();
+  }
+}
+
+function updateChatUnreadBadge() {
+  const badge = document.getElementById('chat-unread-badge');
+  if (!badge) return;
+  if (!state.chatOpen && state.chatUnread > 0) {
+    badge.hidden = false;
+    badge.textContent = state.chatUnread > 9 ? '9+' : String(state.chatUnread);
+  } else {
+    badge.hidden = true;
+  }
+}
+
+// Ajoute UN message au DOM existant (jamais de reconstruction complète de
+// la liste) : c'est ce qui permet à un message qui arrive pendant que je
+// tape de ne pas toucher à l'<input> en cours d'édition juste au-dessus.
+function appendChatMessage(message) {
+  const messagesEl = document.getElementById('chat-messages');
+  if (!messagesEl) return;
+  messagesEl.querySelector('.chat-empty')?.remove();
+
+  const row = document.createElement('div');
+  row.className = 'chat-message' + (message.playerId === state.myId ? ' mine' : '');
+  const nameEl = document.createElement('span');
+  nameEl.className = 'chat-message-name';
+  nameEl.textContent = message.name;
+  const textEl = document.createElement('span');
+  textEl.className = 'chat-message-text';
+  textEl.textContent = message.text;
+  row.append(nameEl, textEl);
+  messagesEl.appendChild(row);
+
+  if (state.chatOpen) messagesEl.scrollTop = messagesEl.scrollHeight;
+}
+
+// Reconstruit tout l'historique d'un coup : uniquement à l'entrée dans un
+// salon (historique reçu via room:create/room:join/session:resume), jamais
+// ensuite — les messages suivants arrivent un par un via appendChatMessage.
+function renderChatHistory(messages) {
+  ensureChatRoot();
+  const messagesEl = document.getElementById('chat-messages');
+  messagesEl.innerHTML = '';
+  if (!messages || messages.length === 0) {
+    messagesEl.innerHTML = '<div class="chat-empty">Aucun message pour l\'instant.</div>';
+    return;
+  }
+  messages.forEach((m) => appendChatMessage(m));
+}
+
+/**
+ * Repositionne (jamais ne recrée) la bulle de chat au-dessus du bouton
+ * "Tri" (#btn-sort-toggle, en haut à gauche de ma main) : mesuré
+ * dynamiquement plutôt que fixé en dur, car la position réelle du bouton
+ * Tri varie selon l'écran (hauteur de viewport, 3 vs 4 joueurs, bannière de
+ * phase spéciale...). Repli sur une position fixe par défaut (bas gauche)
+ * quand ce bouton n'existe pas encore (lobby, ou tout écran avant la
+ * partie). Ne touche qu'à `style.left/top/bottom` du widget lui-même — ne
+ * recrée ni ne vide jamais le panneau/l'input, donc sans risque pour le
+ * focus ou le texte en cours de frappe.
+ */
+function repositionChatWidget() {
+  if (!chatRootEl) return;
+  const widget = chatRootEl.querySelector('.chat-widget');
+  if (!widget) return;
+
+  const sortBtn = document.getElementById('btn-sort-toggle');
+  if (sortBtn) {
+    const rect = sortBtn.getBoundingClientRect();
+    widget.style.left = `${Math.max(8, rect.left)}px`;
+    widget.style.bottom = `${Math.max(8, window.innerHeight - rect.top + 8)}px`;
+    widget.style.top = '';
+  } else {
+    widget.style.left = '12px';
+    widget.style.bottom = 'calc(env(safe-area-inset-bottom, 10px) + 10px)';
+    widget.style.top = '';
+  }
+}
+
+// Point d'entrée commun aux 4 endroits où on rejoint un salon (créer,
+// rejoindre, mode solo, reprise de session) : initialise le chat une seule
+// fois avec l'historique reçu du serveur, sans jamais dépendre du cycle de
+// render() du jeu ensuite.
+function initChatForRoom(chatHistory) {
+  state.chatMessages = chatHistory || [];
+  renderChatHistory(state.chatMessages);
+  setChatVisible(true);
 }
 
 function renderGame() {
@@ -1345,6 +1535,8 @@ function renderGame() {
     const animId = state.drawAnim.id;
     requestAnimationFrame(() => runDrawAnimPhase(animId));
   }
+
+  repositionChatWidget();
 }
 
 function renderHandOverOverlay() {
@@ -1404,10 +1596,29 @@ socket.on('connect', () => {
     state.myId = res.playerId;
     state.room = res.room;
     if (res.hand) state.hand = res.hand;
+    initChatForRoom(res.chat);
     state.error = null;
     state.screen = res.room.started ? 'game' : 'lobby';
     render();
   });
+});
+
+// Diffusé à tout le salon (moi y compris) dès qu'un message est envoyé, voir
+// server.js. Un message tardif d'un salon déjà quitté (state.screen ===
+// 'home') est ignoré, même logique que pour room:update/hand:update
+// ci-dessous.
+socket.on('chat:message', (message) => {
+  if (state.screen === 'home') return;
+  state.chatMessages.push(message);
+  appendChatMessage(message);
+  if (!state.chatOpen) {
+    state.chatUnread += 1;
+    updateChatUnreadBadge();
+  }
+  // Volontairement PAS de render() ici : un message de chat ne doit jamais
+  // déclencher une régénération de l'écran de jeu/lobby (voir l'en-tête du
+  // bloc "Chat du salon" plus haut) — seul le DOM du chat lui-même est mis
+  // à jour, via appendChatMessage.
 });
 
 // Ces quatre évènements concernent un salon/une partie déjà rejoints. Si on
