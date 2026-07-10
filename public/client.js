@@ -857,17 +857,6 @@ function playerName(id) {
 // renderGame(), où statusText/la classe .status-line-mega en dépendent.
 const EASTER_EGG_NAMES = ['Capu', 'capu', 'Capucine', 'capucine', 'Kpu', 'kpu'];
 
-function isBotPlayer(id) {
-  if (!state.room) return false;
-  return !!state.room.players.find((p) => p.id === id)?.isBot;
-}
-
-// Badge discret pour distinguer un bot d'un vrai joueur, dans le lobby comme
-// en jeu (opponent chips, score chips).
-function botBadge() {
-  return `<span class="bot-badge" title="Bot">🤖</span>`;
-}
-
 function render() {
   if (state.screen === 'reconnecting') return renderReconnecting();
   if (state.screen === 'home') return renderHome();
@@ -1057,7 +1046,7 @@ function renderLobby() {
   for (let i = 0; i < room.maxPlayers; i++) {
     const p = room.players[i];
     if (p) {
-      playerItems.push(`<li><span class="player-dot ${p.connected ? '' : 'offline'}"></span>${p.name}${isBotPlayer(p.id) ? botBadge() : ''}${p.id === state.myId ? ' (toi)' : ''}</li>`);
+      playerItems.push(`<li><span class="player-dot ${p.connected ? '' : 'offline'}"></span>${p.name}${p.id === state.myId ? ' (toi)' : ''}</li>`);
     } else {
       playerItems.push(`<li class="empty">En attente d'un joueur…</li>`);
     }
@@ -1327,7 +1316,7 @@ function renderGame() {
     const copasWon = hand.tricksWonCopas[pid] ?? 0;
     return `<div class="opponent ${active ? 'active-turn' : ''}" data-anchor="player-${pid}">
       ${pid === dealerId ? dealerBadge : ''}
-      <div class="name">${playerName(pid)}${isBotPlayer(pid) ? botBadge() : ''}</div>
+      <div class="name">${playerName(pid)}</div>
       <div class="mini-cards">${miniCards}</div>
       <div class="copas-count" title="Copas ramassées dans cette manche">${SUIT_SVG.copas}<span>+${copasWon}</span></div>
     </div>`;
@@ -1405,7 +1394,7 @@ function renderGame() {
     const s = room.scores?.[pid] || { real: 0, suspended: 0 };
     return `<div class="score-chip ${pid === myId ? 'me' : ''}">
       ${s.suspended > 0 ? `<div class="suspended-float">${s.suspended} en suspens</div>` : ''}
-      <div class="name">${playerName(pid)}${isBotPlayer(pid) ? botBadge() : ''}</div>
+      <div class="name">${playerName(pid)}</div>
       <div class="real">${s.real}</div>
     </div>`;
   }).join('');
