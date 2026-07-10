@@ -983,6 +983,9 @@ function renderSolo() {
       <h1>Jouer contre l'<span class="accent">ordinateur</span></h1>
       ${errorBox()}
       <div class="card-panel">
+        <label>Ton prénom</label>
+        <input type="text" id="name-input" placeholder="Ex : Léa" value="${state.name}" maxlength="16" ${state.soloStarting ? 'disabled' : ''} />
+        ${renderNameSuggestions()}
         <label>Nombre de joueurs</label>
         <div class="choice-row">
           <button class="choice-btn ${state.maxPlayersChoice === 3 ? 'active' : ''}" data-n="3">3 joueurs</button>
@@ -992,16 +995,21 @@ function renderSolo() {
         <button class="secondary" id="btn-back" ${state.soloStarting ? 'disabled' : ''}>Retour</button>
       </div>
     </div>`;
+  document.getElementById('name-input').oninput = (e) => (state.name = e.target.value);
+  wireNameSuggestions();
+  // [data-n] (pas juste .choice-btn) pour ne pas être aussi capté par le
+  // câblage des suggestions de pseudo (mêmes classes, data-name à la place).
   document.querySelectorAll('.choice-btn[data-n]').forEach((b) => {
     b.onclick = () => { state.maxPlayersChoice = Number(b.dataset.n); render(); };
   });
   document.getElementById('btn-back').onclick = () => { state.screen = 'home'; render(); };
   document.getElementById('btn-submit').onclick = () => {
+    if (!state.name.trim()) { state.error = 'Entre un prénom.'; render(); return; }
     state.error = null;
     state.soloStarting = true;
     render();
 
-    const soloName = state.name.trim() || 'Moi';
+    const soloName = state.name.trim();
     socket.emit('room:create', { name: soloName, maxPlayers: state.maxPlayersChoice }, (res) => {
       if (!res.ok) { state.error = res.error; state.soloStarting = false; render(); return; }
       state.myId = res.playerId;
