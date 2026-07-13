@@ -51,8 +51,17 @@ recherche exacte de fin de manche, puis (sur demande explicite après
 mesure de ses statistiques sur 50 parties) une profondeur de recherche
 encore étendue spécifiquement à 3 joueurs — testé et validé par
 simulation uniquement (`game/botAI_expert.test.js`), pas encore rejoué par
-l'utilisateur en conditions réelles. Tout est testé et confirmé
-fonctionnel par l'utilisateur à ces dates, sauf mention contraire
+l'utilisateur en conditions réelles. Toujours le 2026-07-10, plusieurs
+allers-retours ont affiné le badge "points en suspens" (`.suspended-float`
+dans `style.css`) : d'un bandeau texte complet ("X en suspens") à une
+pastille ronde compacte ("+X"), puis correction d'un rectangle vert
+parasite causé par un anneau `box-shadow` mal adapté à sa nouvelle forme,
+puis rendue tapable (essai d'une info-bulle au tap, remplacée ensuite sur
+demande par une expansion de la pastille elle-même qui affiche "X points
+en suspens" en toutes lettres avant de se réduire à nouveau au second
+tap) — voir décisions techniques ci-dessous pour le détail complet. Tout
+est testé et confirmé fonctionnel par l'utilisateur à ces dates, sauf
+mention contraire
 ci-dessous.
 
 ## Stack et architecture
@@ -490,6 +499,56 @@ ci-dessous.
     pixel figées au départ du vol) — confirmé sans rapport avec le
     changement de disposition via une passe de test sans redimensionnement
     en cours d'animation.
+- **Badge "points en suspens" (`.suspended-float`, `style.css`/
+  `client.js`) : plusieurs itérations le même jour (2026-07-10).**
+  1. D'abord un bandeau texte complet ("X en suspens") repositionné en
+     haut à droite du siège concerné (`.seat`, voir refonte en table
+     ci-dessus) — jugé trop imposant par l'utilisateur.
+  2. Remplacé par une pastille ronde compacte ("+X", juste le chiffre).
+     Un anneau `box-shadow: 0 0 0 2px var(--felt)` repris du badge donneur
+     (pensé pour un cercle de taille fixe sur fond uniforme) a d'abord créé
+     un petit rectangle vert parasite bien visible : la pastille est une
+     pilule à largeur VARIABLE (2 chiffres l'élargissent) posée au coin du
+     siège, à cheval sur son fond clair et le tapis plus sombre juste à
+     côté — l'anneau y ressortait au lieu de se fondre. Retiré, ne garde
+     qu'une ombre portée neutre.
+  3. Rendue tapable/cliquable : zone tactile élargie à 40x40px
+     (`.suspended-wrap`/`.suspended-hit`, même recette que `.hud-btn`)
+     autour de la pastille visible, plus petite. Premier essai : une
+     info-bulle "Points en suspens" séparée qui s'ouvrait à côté au tap —
+     remplacée sur demande explicite de l'utilisateur par un comportement
+     différent (voir 4).
+  4. **Version retenue : la pastille s'agrandit ELLE-MÊME sur place**
+     (`.suspended-float.expanded`, transition CSS) pour afficher "X points
+     en suspens" en toutes lettres (X = le vrai chiffre du joueur), et se
+     réduit à nouveau au second tap (sur elle ou ailleurs sur la page).
+     Piège technique rencontré : CSS ne peut animer proprement une
+     transition que si les deux états (avant/après) ont des valeurs
+     numériques explicites, jamais `width`/`height`/`top`/`left: auto` —
+     `.suspended-float` est donc positionné en absolu avec des coordonnées
+     numériques précises dans les DEUX états plutôt que centré par
+     flexbox comme le premier essai. Un enfant flexbox non protégé par
+     `flex-shrink: 0` se fait aussi comprimer bien en dessous de sa
+     largeur déclarée par son conteneur (40px) — piège rencontré en cours
+     de route, la bulle agrandie se retrouvait tassée sur bien plus de
+     lignes que nécessaire tant que ce n'était pas corrigé.
+     **Le point d'ancrage de l'agrandissement change selon la position du
+     siège**, pour toujours grossir vers le centre ouvert du tapis plutôt
+     que vers un siège voisin ou hors de l'écran : sièges adverses (rangée
+     du haut) vers le bas, mon siège (en bas de l'écran) vers le haut,
+     sièges de coin (gauche/droite) horizontalement vers l'intérieur du
+     tapis plutôt que vers le bord. Les valeurs exactes (ex. 138px de
+     descente pour le siège du haut) ont été calées par mesure réelle des
+     dimensions de siège via Playwright, pas estimées à l'œil — un premier
+     réglage à 122px laissait un chevauchement d'environ 1px avec le siège
+     adjacent à 4 joueurs (à cause du `margin-top` des sièges de coin,
+     voir refonte en table ci-dessus), corrigé après coup en mesurant
+     précisément la hauteur maximale réelle des sièges plutôt qu'en
+     resupposant une valeur.
+  Testé (Playwright) sur mobile et desktop, 3 et 4 joueurs, sur les 4
+  positions de siège avec des points en suspens simultanés partout :
+  texte correct, aucun débordement d'écran, aucun chevauchement avec un
+  autre siège, fermeture fiable au reclic et au clic extérieur.
 
 ## Fausses pistes essayées puis abandonnées
 
@@ -632,6 +691,24 @@ ci-dessous.
 
 ## Ce qu'il reste à faire / à surveiller
 
+- **À valider par l'utilisateur à son retour (absent plusieurs jours à
+  partir du 2026-07-13)** — tout le reste de cette session (2026-07-10) a
+  été testé automatiquement (Playwright, simulations de parties complètes)
+  mais pas encore rejoué en conditions réelles :
+  - La refonte de l'écran de jeu en disposition "table" (sièges autour
+    d'un tapis) — déjà confirmée une première fois ("ça me convient bien
+    pour l'instant"), mais pas encore éprouvée sur un essai prolongé en
+    partie complète.
+  - Le niveau renforcé de Bot Sergio (recherche exacte de fin de manche,
+    profondeur étendue à 3 joueurs) — jamais rejoué par l'utilisateur en
+    vraie partie, seulement en simulation.
+  - Le badge "points en suspens" dans sa version finale (pastille qui
+    s'agrandit sur place au tap/clic) — jamais eu l'occasion d'apparaître
+    en vraie partie (il faut qu'un joueur ramasse ses 10 copas d'une
+    manche pour le déclencher), testé uniquement en injectant un état de
+    score fictif côté client via Playwright.
+  Repartir de ces trois points en priorité à la reprise, avant d'entamer
+  du nouveau travail.
 - **Limitations connues du README, toujours valables** : une seule partie à
   la fois par salon ; les salons inactifs sont supprimés après 5 minutes si
   tout le monde s'est déconnecté (voir `setTimeout` dans le handler
