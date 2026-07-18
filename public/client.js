@@ -190,7 +190,8 @@ const state = {
                             // dernière carte du pli finit d'arriver (hand.currentTrick est
                             // déjà vidé à ce moment-là par le hand:update qui a suivi).
 
-  chatMessages: [], // { id, playerId, name, text, ts }, seedé depuis room:create/room:join/
+  chatMessages: [], // { id, playerId, name, type: 'text'|'voice', text?, audio?, durationMs?, ts },
+                    // seedé depuis room:create/room:join/
                     // session:resume (historique déjà en mémoire côté serveur pour ce salon)
                     // puis complété en direct par chat:message ; jamais vidé entre les manches,
                     // seulement à leaveGame() (le salon lui-même change). Le DOM du chat
@@ -1165,8 +1166,15 @@ function ensureChatRoot() {
         <div class="chat-messages" id="chat-messages"></div>
         <form class="chat-form" id="chat-form">
           <input type="text" id="chat-input" maxlength="200" placeholder="Message…" autocomplete="off" />
+          <button type="button" class="chat-mic-btn" id="btn-chat-mic" aria-label="Message vocal" title="Message vocal">🎤</button>
           <button type="submit" class="chat-send-btn" aria-label="Envoyer">➤</button>
         </form>
+        <div class="chat-recording-bar" id="chat-recording-bar" hidden>
+          <span class="chat-recording-dot" aria-hidden="true"></span>
+          <span class="chat-recording-time" id="chat-recording-time">0:00</span>
+          <button type="button" class="chat-recording-cancel" id="btn-chat-recording-cancel" aria-label="Annuler le message vocal" title="Annuler">✕</button>
+          <button type="button" class="chat-recording-stop" id="btn-chat-recording-stop" aria-label="Arrêter et envoyer le message vocal" title="Arrêter et envoyer">⏹</button>
+        </div>
       </div>
       <button type="button" class="chat-toggle-btn" id="btn-chat-toggle" aria-label="Ouvrir le chat" title="Chat">
         💬<span class="chat-unread-badge" id="chat-unread-badge" hidden></span>
@@ -1186,6 +1194,16 @@ function ensureChatRoot() {
     input.value = '';
     socket.emit('chat:send', { text });
   };
+
+  const micBtn = document.getElementById('btn-chat-mic');
+  if (!isVoiceRecordingSupported()) {
+    micBtn.disabled = true;
+    micBtn.title = "Message vocal non supporté par ce navigateur";
+  } else {
+    micBtn.onclick = () => startVoiceRecording();
+  }
+  document.getElementById('btn-chat-recording-cancel').onclick = () => stopVoiceRecording(false);
+  document.getElementById('btn-chat-recording-stop').onclick = () => stopVoiceRecording(true);
 
   window.addEventListener('resize', repositionChatWidget);
 }
@@ -1222,6 +1240,171 @@ function updateChatUnreadBadge() {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Messages vocaux du chat (MediaRecorder). Même diffusion que le texte
+// (chat:send / chat:message), voir server.js pour la validation/le stockage
+// côté serveur (chat:sendVoice, MAX_VOICE_DURATION_MS/MAX_VOICE_AUDIO_BYTES).
+//
+// `voiceRecorder` est un état d'enregistrement en cours, gardé en dehors de
+// `state` (comme `chatRootEl`) : il référence des objets non sérialisables
+// (MediaRecorder, MediaStream) sans rapport avec le pattern state/render()
+// habituel du jeu, et sa durée de vie est celle d'un seul enregistrement.
+// ---------------------------------------------------------------------------
+const MAX_VOICE_DURATION_MS = 30000;
+const MAX_VOICE_AUDIO_BYTES = 2 * 1024 * 1024; // garder cohérent avec server.js
+let voiceRecorder = null;
+
+function isVoiceRecordingSupported() {
+  return !!(navigator.mediaDevices?.getUserMedia && typeof MediaRecorder !== 'undefined');
+}
+
+// Choisit le premier type mime supporté parmi des candidats raisonnables ;
+// `undefined` laisse MediaRecorder choisir son propre défaut si aucun de ces
+// candidats précis n'est supporté (Safari, notamment).
+function pickVoiceMimeType() {
+  const candidates = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4', 'audio/ogg;codecs=opus'];
+  if (typeof MediaRecorder === 'undefined' || !MediaRecorder.isTypeSupported) return undefined;
+  return candidates.find((type) => MediaRecorder.isTypeSupported(type));
+}
+
+function formatVoiceTime(ms) {
+  const totalSec = Math.max(0, Math.round(ms / 1000));
+  const m = Math.floor(totalSec / 60);
+  const s = totalSec % 60;
+  return `${m}:${String(s).padStart(2, '0')}`;
+}
+
+function setRecordingUiActive(active) {
+  const form = document.getElementById('chat-form');
+  const bar = document.getElementById('chat-recording-bar');
+  if (form) form.hidden = active;
+  if (bar) bar.hidden = !active;
+}
+
+async function startVoiceRecording() {
+  if (voiceRecorder || !isVoiceRecordingSupported()) return;
+
+  let stream;
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+  } catch (err) {
+    alert("Impossible d'accéder au micro. Vérifie les autorisations du navigateur pour ce site.");
+    return;
+  }
+
+  const mimeType = pickVoiceMimeType();
+  let mediaRecorder;
+  try {
+    mediaRecorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream);
+  } catch (err) {
+    stream.getTracks().forEach((t) => t.stop());
+    alert("L'enregistrement vocal n'a pas pu démarrer sur cet appareil.");
+    return;
+  }
+
+  const chunks = [];
+  mediaRecorder.ondataavailable = (e) => {
+    if (e.data && e.data.size > 0) chunks.push(e.data);
+  };
+
+  voiceRecorder = { mediaRecorder, chunks, stream, startedAt: Date.now(), timerId: null, cancelled: false };
+
+  mediaRecorder.onstop = () => {
+    const rec = voiceRecorder;
+    voiceRecorder = null;
+    if (rec.timerId) clearInterval(rec.timerId);
+    rec.stream.getTracks().forEach((t) => t.stop());
+    setRecordingUiActive(false);
+    if (rec.cancelled) return;
+
+    const durationMs = Date.now() - rec.startedAt;
+    if (durationMs < 300 || rec.chunks.length === 0) return; // trop court/vide, ignoré silencieusement
+    const blob = new Blob(rec.chunks, { type: rec.mediaRecorder.mimeType || mimeType || 'audio/webm' });
+    sendVoiceMessage(blob, Math.min(durationMs, MAX_VOICE_DURATION_MS));
+  };
+
+  mediaRecorder.start();
+  setRecordingUiActive(true);
+  updateRecordingTimer();
+  voiceRecorder.timerId = setInterval(updateRecordingTimer, 200);
+}
+
+function updateRecordingTimer() {
+  if (!voiceRecorder) return;
+  const elapsed = Date.now() - voiceRecorder.startedAt;
+  const timeEl = document.getElementById('chat-recording-time');
+  if (timeEl) timeEl.textContent = formatVoiceTime(Math.max(0, MAX_VOICE_DURATION_MS - elapsed));
+  if (elapsed >= MAX_VOICE_DURATION_MS) stopVoiceRecording(true);
+}
+
+// send=true : arrête et envoie le clip enregistré jusqu'ici (bouton stop, ou
+// limite de durée atteinte). send=false : arrête et jette le clip (bouton
+// annuler), rien n'est envoyé.
+function stopVoiceRecording(send) {
+  if (!voiceRecorder || voiceRecorder.mediaRecorder.state === 'inactive') return;
+  voiceRecorder.cancelled = !send;
+  voiceRecorder.mediaRecorder.stop();
+}
+
+function blobToBase64(blob) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      const result = String(reader.result || '');
+      resolve(result.slice(result.indexOf(',') + 1));
+    };
+    reader.onerror = () => reject(reader.error);
+    reader.readAsDataURL(blob);
+  });
+}
+
+async function sendVoiceMessage(blob, durationMs) {
+  if (blob.size === 0) return;
+  if (blob.size > MAX_VOICE_AUDIO_BYTES) {
+    alert('Message vocal trop volumineux — réessaie avec un message plus court.');
+    return;
+  }
+  const audio = await blobToBase64(blob);
+  socket.emit('chat:sendVoice', { audio, mimeType: blob.type || 'audio/webm', durationMs }, (res) => {
+    if (!res?.ok) alert(res?.error || "Échec de l'envoi du message vocal.");
+  });
+}
+
+// Lecteur play/pause compact pour une bulle de message vocal reçue. Un seul
+// <audio> par message, créé une fois et gardé en fermeture (closure) par le
+// bouton — jamais rattaché au DOM lui-même (pas besoin, la lecture ne
+// nécessite pas d'élément visible).
+function renderVoiceMessageEl(message) {
+  const wrap = document.createElement('span');
+  wrap.className = 'chat-voice-msg';
+
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'chat-voice-play-btn';
+  btn.setAttribute('aria-label', 'Écouter le message vocal');
+  btn.textContent = '▶';
+
+  const timeEl = document.createElement('span');
+  timeEl.className = 'chat-voice-time';
+  timeEl.textContent = formatVoiceTime(message.durationMs || 0);
+
+  const audio = new Audio(message.audio);
+  audio.preload = 'none';
+  audio.onplay = () => { btn.textContent = '⏸'; };
+  audio.onpause = () => { btn.textContent = '▶'; };
+  audio.onended = () => { btn.textContent = '▶'; };
+  btn.onclick = () => {
+    if (audio.paused) {
+      audio.play().catch(() => alert('Impossible de lire ce message vocal.'));
+    } else {
+      audio.pause();
+    }
+  };
+
+  wrap.append(btn, timeEl);
+  return wrap;
+}
+
 // Ajoute UN message au DOM existant (jamais de reconstruction complète de
 // la liste) : c'est ce qui permet à un message qui arrive pendant que je
 // tape de ne pas toucher à l'<input> en cours d'édition juste au-dessus.
@@ -1235,10 +1418,16 @@ function appendChatMessage(message) {
   const nameEl = document.createElement('span');
   nameEl.className = 'chat-message-name';
   nameEl.textContent = message.name;
-  const textEl = document.createElement('span');
-  textEl.className = 'chat-message-text';
-  textEl.textContent = message.text;
-  row.append(nameEl, textEl);
+  row.appendChild(nameEl);
+
+  if (message.type === 'voice') {
+    row.appendChild(renderVoiceMessageEl(message));
+  } else {
+    const textEl = document.createElement('span');
+    textEl.className = 'chat-message-text';
+    textEl.textContent = message.text;
+    row.appendChild(textEl);
+  }
   messagesEl.appendChild(row);
 
   if (state.chatOpen) messagesEl.scrollTop = messagesEl.scrollHeight;

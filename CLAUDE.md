@@ -62,7 +62,14 @@ en suspens" en toutes lettres avant de se réduire à nouveau au second
 tap) — voir décisions techniques ci-dessous pour le détail complet. Tout
 est testé et confirmé fonctionnel par l'utilisateur à ces dates, sauf
 mention contraire
-ci-dessous.
+ci-dessous. Le 2026-07-18, le chat textuel du salon a été complété par des
+messages vocaux courts (bouton micro, `MediaRecorder`, 30 secondes max) —
+voir "Décisions techniques importantes" ci-dessous (section chat) pour le
+détail. Vérifié par un script socket.io-client (envoi/réception, historique,
+rejets de taille/durée/payload invalide) et un script Playwright (micro
+simulé via les flags Chromium dédiés, permission refusée, viewport mobile) ;
+pas encore rejoué par l'utilisateur avec un vrai micro en conditions
+réelles.
 
 ## Stack et architecture
 
@@ -404,6 +411,64 @@ ci-dessous.
     unique via `initChatForRoom()`, qui appelle `renderChatHistory()` une
     fois pour construire la liste de départ (seul endroit qui reconstruit
     tout le DOM des messages d'un coup).
+  - **Messages vocaux courts (2026-07-18), en complément du texte.** Bouton
+    micro (`#btn-chat-mic`) dans `.chat-form` ; un clic démarre
+    l'enregistrement (`startVoiceRecording()` dans `client.js`, demande la
+    permission au navigateur à ce moment précis via `getUserMedia`, jamais
+    avant), un second clic (`#btn-chat-recording-stop`) ou l'écoulement de
+    `MAX_VOICE_DURATION_MS` (30s, `MediaRecorder` s'arrête tout seul) envoie
+    le clip ; `#btn-chat-recording-cancel` annule sans envoyer. Pendant
+    l'enregistrement, `.chat-form` est masqué au profit de
+    `#chat-recording-bar` (pastille qui pulse via `@keyframes`, respecte
+    `prefers-reduced-motion`, décompte du temps restant) plutôt que les deux
+    affichés en même temps.
+    - **Permission refusée gérée proprement** : `getUserMedia` qui rejette
+      (utilisateur qui bloque le micro) affiche une alerte claire au lieu de
+      laisser une exception JS non gérée ; testé en simulant un rejet de
+      `getUserMedia` via `page.addInitScript` (Playwright), pas seulement en
+      théorie.
+    - **Encodage/transport** : le clip (`Blob` de `MediaRecorder`, type
+      choisi parmi `audio/webm;codecs=opus`/`audio/webm`/`audio/mp4`/
+      `audio/ogg;codecs=opus` selon ce que `MediaRecorder.isTypeSupported`
+      accepte, repli sur le défaut du navigateur sinon — utile pour Safari,
+      qui ne supporte pas webm/opus) est encodé en base64 côté client
+      (`blobToBase64`) et envoyé via un nouvel événement `chat:sendVoice`
+      (à côté de `chat:send` existant, jamais fusionnés : formes de payload
+      trop différentes). Le serveur reconstruit une data URL
+      (`data:<mimeType>;base64,<...>`) stockée directement dans le message
+      (`message.audio`), utilisable telle quelle comme `src` d'un `<audio>`
+      côté client (`renderVoiceMessageEl`, lecteur play/pause ▶/⏸ + durée
+      affichée, un seul `<audio>` par bulle créé une fois). Chaque message a
+      désormais un `type` (`'text'` ou `'voice'`, ajouté aussi aux messages
+      texte pour que le client puisse distinguer les deux au rendu).
+    - **Limites, des deux côtés** : `MAX_VOICE_DURATION_MS` (30000) borne la
+      durée déclarée (avec `VOICE_DURATION_GRACE_MS` = 2000 de tolérance
+      côté serveur pour la latence de l'encodeur/horloge client, jamais plus
+      généreux que ça) ; `MAX_VOICE_AUDIO_BYTES` (2 Mo décodés, dupliqué
+      identique côté client et serveur — le client vérifie la taille avant
+      même d'envoyer pour un retour immédiat, le serveur revalide
+      indépendamment car un client ne fait jamais confiance) filtre d'abord
+      sur la longueur de la chaîne base64 (~4/3 de la taille réelle) avant
+      de décoder quoi que ce soit côté serveur, pour ne pas dépenser de
+      CPU/mémoire à décoder un payload déjà hors limite. **`maxHttpBufferSize`
+      de socket.io relevé à 4 Mo** (`new Server(server, { maxHttpBufferSize:
+      ... })`) : la limite par défaut (1 Mo) est plus basse que la taille
+      d'un clip audio encodé en base64 dans le payload JSON et aurait coupé
+      la connexion sur tout envoi par ailleurs valide — piège découvert en
+      testant un envoi de clip proche de la limite.
+    - Un bot ne peut techniquement pas envoyer de message vocal (même garde
+      `!player.isBot` que pour `chat:send`, aucun socket réel de leur côté
+      de toute façon).
+    - Testé par un script socket.io-client (envoi/réception avec la bonne
+      data URL/durée/expéditeur, historique transmis à un joueur qui
+      rejoint après coup, rejet propre d'un clip trop volumineux/d'une
+      durée hors limite/d'un payload malformé, le serveur continue de
+      fonctionner normalement après ces erreurs) et un script Playwright
+      (micro simulé via `--use-fake-device-for-media-stream`/
+      `--use-fake-ui-for-media-stream`, scénario desktop 2 joueurs,
+      permission refusée, viewport mobile 390×844 sans défilement
+      horizontal parasite). **Pas encore rejoué par l'utilisateur avec un
+      vrai micro en conditions réelles** (voir "Ce qu'il reste à faire").
 - **Section "Règles du jeu"** (`renderRulesOverlay` dans `client.js`) :
   overlay accessible depuis l'accueil (onglets 3/4 joueurs, celui à 3 actif
   par défaut) et depuis une partie en cours (version correspondant au nombre
@@ -709,6 +774,13 @@ ci-dessous.
     score fictif côté client via Playwright.
   Repartir de ces trois points en priorité à la reprise, avant d'entamer
   du nouveau travail.
+- **Messages vocaux du chat (2026-07-18) : jamais testés avec un vrai micro
+  en conditions réelles.** Entièrement vérifié par simulation (script
+  socket.io-client pour le protocole serveur, script Playwright avec micro
+  simulé — voir "Décisions techniques importantes", section chat), mais pas
+  encore par l'utilisateur sur un vrai téléphone/navigateur : à valider en
+  priorité au prochain retour (enregistrement, permission refusée, lecture
+  côté destinataire, sur mobile ET desktop).
 - **Limitations connues du README, toujours valables** : une seule partie à
   la fois par salon ; les salons inactifs sont supprimés après 5 minutes si
   tout le monde s'est déconnecté (voir `setTimeout` dans le handler

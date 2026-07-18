@@ -14,7 +14,12 @@ const botAIExpert = require('./game/botAI_expert');
 
 const app = express();
 const server = http.createServer(app);
-const io = new Server(server);
+// maxHttpBufferSize par défaut de socket.io = 1 Mo, trop bas pour les
+// messages vocaux du chat (voir chat:sendVoice plus bas, MAX_VOICE_AUDIO_BYTES
+// = 2 Mo décodés -> jusqu'à ~2,8 Mo une fois encodés en base64 dans le JSON
+// du payload) : relevé avec une marge confortable pour ne jamais couper la
+// connexion sur un envoi par ailleurs valide.
+const io = new Server(server, { maxHttpBufferSize: 4 * 1024 * 1024 });
 
 app.use(express.static(path.join(__dirname, 'public')));
 
@@ -376,6 +381,36 @@ function isValidCard(card) {
 const MAX_CHAT_MESSAGE_LENGTH = 200;
 const MAX_CHAT_HISTORY = 100;
 
+// Messages vocaux du chat : même principe (mémoire uniquement, plafonnée par
+// MAX_CHAT_HISTORY ci-dessus, jamais persistés). MAX_VOICE_DURATION_MS borne
+// la durée d'enregistrement côté client ; VOICE_DURATION_GRACE_MS tolère un
+// léger dépassement (latence de l'encodeur/de l'horloge côté client) sans
+// rejeter un clip par ailleurs légitime. MAX_VOICE_AUDIO_BYTES borne la
+// taille réelle (décodée) du clip, indépendamment de la durée déclarée —
+// un client qui mentirait sur la durée ne peut pas contourner cette limite.
+const MAX_VOICE_DURATION_MS = 30000;
+const VOICE_DURATION_GRACE_MS = 2000;
+const MAX_VOICE_AUDIO_BYTES = 2 * 1024 * 1024;
+
+/**
+ * Validation minimale du payload d'un message vocal avant décodage : forme
+ * générale correcte, type mime plausible, durée déclarée dans les clous.
+ * Ne vérifie PAS encore la taille réelle des octets décodés (fait séparément
+ * après un premier filtre sur la longueur de la chaîne base64, voir
+ * chat:sendVoice) pour éviter de décoder inutilement un payload déjà hors
+ * limite d'après sa seule longueur en caractères.
+ */
+function isValidVoicePayload(payload) {
+  if (!payload || typeof payload !== 'object') return false;
+  if (typeof payload.audio !== 'string' || !payload.audio) return false;
+  if (typeof payload.mimeType !== 'string' || !payload.mimeType.startsWith('audio/')) return false;
+  if (typeof payload.durationMs !== 'number' || !Number.isFinite(payload.durationMs) || payload.durationMs <= 0) {
+    return false;
+  }
+  if (payload.durationMs > MAX_VOICE_DURATION_MS + VOICE_DURATION_GRACE_MS) return false;
+  return true;
+}
+
 /**
  * Retire les caractères de contrôle (dont les retours à la ligne — un chat
  * sur une ligne reste plus simple à afficher/lire dans le panneau compact
@@ -568,7 +603,60 @@ io.on('connection', (socket) => {
       id: crypto.randomUUID(),
       playerId: player.playerId,
       name: player.name,
+      type: 'text',
       text,
+      ts: Date.now(),
+    };
+    room.chatMessages.push(message);
+    if (room.chatMessages.length > MAX_CHAT_HISTORY) room.chatMessages.shift();
+
+    io.to(room.code).emit('chat:message', message);
+    callback?.({ ok: true });
+  }));
+
+  // Message vocal du chat : même diffusion que chat:send (broadcast à
+  // room.code, historique commun room.chatMessages), avec un payload audio
+  // en plus. Le client encode le clip enregistré (MediaRecorder) en base64
+  // et l'envoie tel quel ; on le stocke reconstitué en data URL
+  // (`data:<mimeType>;base64,<...>`) directement utilisable comme `src`
+  // d'un <audio> côté client, sans traitement serveur du contenu audio
+  // lui-même (aucune transcodage/compression : on fait confiance à la
+  // limite de taille/durée pour rester raisonnable).
+  socket.on('chat:sendVoice', withErrorHandling('chat:sendVoice', (payload, callback) => {
+    const room = rooms[socket.data.roomCode];
+    if (!room) return callback?.({ ok: false, error: 'Salon introuvable.' });
+
+    const player = room.players.find((p) => p.playerId === socket.data.playerId);
+    if (!player || player.isBot) return callback?.({ ok: false, error: 'Joueur invalide.' });
+
+    if (!isValidVoicePayload(payload)) {
+      return callback?.({ ok: false, error: 'Message vocal invalide.' });
+    }
+
+    // Filtre rapide sur la longueur de la chaîne base64 (~4/3 de la taille
+    // réelle en octets) avant de décoder quoi que ce soit : évite de
+    // dépenser du CPU/mémoire à décoder un payload déjà hors limite.
+    if (payload.audio.length > MAX_VOICE_AUDIO_BYTES * 1.4) {
+      return callback?.({ ok: false, error: 'Message vocal trop volumineux (30 secondes max).' });
+    }
+
+    let audioBuffer;
+    try {
+      audioBuffer = Buffer.from(payload.audio, 'base64');
+    } catch (_) {
+      return callback?.({ ok: false, error: 'Message vocal invalide.' });
+    }
+    if (audioBuffer.length === 0 || audioBuffer.length > MAX_VOICE_AUDIO_BYTES) {
+      return callback?.({ ok: false, error: 'Message vocal trop volumineux (30 secondes max).' });
+    }
+
+    const message = {
+      id: crypto.randomUUID(),
+      playerId: player.playerId,
+      name: player.name,
+      type: 'voice',
+      audio: `data:${payload.mimeType};base64,${payload.audio}`,
+      durationMs: Math.min(payload.durationMs, MAX_VOICE_DURATION_MS),
       ts: Date.now(),
     };
     room.chatMessages.push(message);
