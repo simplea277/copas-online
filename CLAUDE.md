@@ -753,6 +753,30 @@ réelles.
     du score-chip concerné. Le premier/dernier chip (le plus proche d'un
     bord) passait donc sous le bouton, surtout à 4 joueurs. Corrigé en
     augmentant ce `padding-top` à 60px.
+11. **Adversaires parfois placés au mauvais siège autour de la table
+    (2026-07-18).** `others` (la liste des adversaires à afficher, voir
+    `renderGame()` dans `client.js`) était calculé par
+    `hand.players.filter(p => p !== myId)` — un simple filtre sur le
+    tableau brut, dans l'ordre fixe de `hand.players` (l'ordre du tour de
+    table), qui ne dépend PAS de ma propre position dans ce tableau. Le
+    siège "haut-gauche" (premier élément de `others`) tombait donc bien sur
+    le joueur suivant dans le sens du jeu si j'étais moi-même le premier
+    élément de `hand.players`, mais sur n'importe quel autre joueur sinon —
+    par exemple avec `hand.players = [Alice, Bob, Carol, Dave]`, Bob voyait
+    `[Alice, Carol, Dave]` (l'ordre brut moins lui-même) au lieu de l'ordre
+    de jeu correct en partant de lui, `[Carol, Dave, Alice]`. Corrigé en
+    faisant pivoter `hand.players` pour commencer juste après `myId`
+    (`hand.players.slice(myIndex + 1).concat(hand.players.slice(0, myIndex))`)
+    avant de l'assigner à `others`, sans toucher au mapping
+    index-vers-position déjà correct (`SEAT_POSITIONS_BY_OPPONENT_COUNT`,
+    voir "Décisions techniques importantes" ci-dessus). `hand.players` et ma
+    propre position dedans étant fixes pour toute la manche, chaque joueur
+    garde un siège stable pendant toute la partie, comme avant — seul
+    l'ordre de calcul était en cause, pas la stabilité. Testé via un script
+    Playwright temporaire (parties réelles à 3 et 4 joueurs humains, une
+    page par joueur, lecture de `hand.players` + comparaison de l'ordre visuel
+    des sièges sur CHAQUE page) : les 4 perspectives différentes (une par
+    joueur) confirmées correctes aux deux effectifs.
 
 ## Ce qu'il reste à faire / à surveiller
 

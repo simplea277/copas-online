@@ -1501,7 +1501,21 @@ function renderGame() {
   }
 
   const myId = state.myId;
-  const others = hand.players.filter((p) => p !== myId);
+  // Ordre des adversaires = ordre du tour de jeu en partant de MOI (le
+  // joueur juste après moi dans hand.players, cycliquement, en premier),
+  // PAS l'ordre brut de hand.players filtré de mon id : hand.players est un
+  // tableau fixe pour toute la partie (jamais rotaté), donc filtrer
+  // directement dessus place les adversaires dans un ordre qui dépend de ma
+  // propre position dans ce tableau au lieu du sens de jeu relatif à moi
+  // (bug corrigé le 2026-07-18 — voir CLAUDE.md, "Bugs corrigés"). Ce
+  // rebasage donne à chaque joueur une disposition différente sur son
+  // propre écran, toujours moi en bas et les autres dans le sens de jeu à
+  // partir de moi (siège haut-gauche puis haut-centre puis haut-droite),
+  // quel que soit le donneur ou l'ordre réel de hand.players côté serveur.
+  const myIndex = hand.players.indexOf(myId);
+  const others = hand.players.length
+    ? hand.players.slice(myIndex + 1).concat(hand.players.slice(0, myIndex))
+    : [];
   const myTurn = hand.turnPlayerId === myId && !state.handOverInfo;
   const myTurnEasterEgg = myTurn && EASTER_EGG_NAMES.includes(playerName(myId));
   const dealerId = hand.players[hand.dealerIndex];
@@ -1526,12 +1540,14 @@ function renderGame() {
   };
 
   // Position de chaque adversaire autour de la table (disposition "sièges"),
-  // dérivée de l'index dans `others` (lui-même dans l'ordre fixe de
-  // hand.players, jamais rotaté d'une manche à l'autre) : à 3 joueurs, les 2
-  // adversaires de part et d'autre en haut ; à 4 joueurs, un 3e siège
-  // s'ajoute en haut au centre, les 2 autres sur les côtés. Garantit que le
-  // siège visuel de chacun reste stable pendant toute la partie plutôt que
-  // de dépendre du joueur dont c'est le tour.
+  // dérivée de l'index dans `others` (lui-même dans l'ordre du sens de jeu à
+  // partir de moi, voir plus haut) : à 3 joueurs, les 2 adversaires de part
+  // et d'autre en haut (gauche = joueur suivant, droite = joueur d'après) ;
+  // à 4 joueurs, un 3e siège s'ajoute en haut au centre entre les deux
+  // (gauche = suivant, centre = d'après, droite = dernier). hand.players et
+  // myIndex étant fixes pour toute la partie, ce calcul reste lui aussi
+  // stable pendant toute la partie plutôt que de dépendre du joueur dont
+  // c'est le tour ou du donneur.
   const SEAT_POSITIONS_BY_OPPONENT_COUNT = {
     2: ['left', 'right'],
     3: ['left', 'top', 'right'],
