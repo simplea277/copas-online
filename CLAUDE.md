@@ -948,3 +948,115 @@ commit poussé (séquence typique : `build_in_progress` → `update_in_progress`
 → `live`, ~30-45s en pratique). Si `.env` est absent (nouvel environnement,
 clé expirée...), redemander une clé fraîche à l'utilisateur plutôt que de
 supposer qu'une ancienne fonctionne encore.
+
+---
+
+# Section "Nutrition" (chantier séparé, sans rapport avec le jeu de cartes)
+
+## Qu'est-ce que c'est
+
+Ajoutée le 2026-07-26, à la demande de l'utilisateur, **complètement
+indépendante du jeu Copas** ci-dessus — partage juste le même serveur Express
+et (potentiellement) la même base Supabase. Un tableau partagé de produits
+alimentaires avec leurs valeurs nutritionnelles (calories, protéines,
+glucides/sucres, lipides/acides gras saturés, fibres, sel, vitamines/
+minéraux), alimenté à la main par l'utilisateur et quelques proches, sans
+système de compte.
+
+**Accès caché, pas protégé.** La page vit à `/nutrition` — aucun lien ni
+bouton nulle part ailleurs sur le site n'y mène (ni depuis l'accueil du jeu,
+ni depuis aucun écran de partie). N'importe qui connaissant/tapant cette URL
+précise voit et modifie le même tableau : ce n'est **pas** une protection par
+mot de passe ou compte, seulement une absence de lien visible (l'utilisateur
+l'a explicitement demandé ainsi). À garder en tête si le tableau venait à
+contenir un jour une information plus sensible que des valeurs nutritionnelles.
+
+## Décision importante : pas d'extraction automatique par photo (abandonnée)
+
+La demande initiale prévoyait : prendre en photo l'étiquette nutritionnelle
+d'un produit, envoyer la photo à l'API Claude (`/v1/messages`, image en
+base64, réponse contrainte en JSON via `output_config.format` /
+`json_schema` pour un parsing fiable) pour extraire automatiquement les
+valeurs, puis les présenter dans un formulaire pré-rempli à corriger avant
+confirmation.
+
+**Abandonnée en cours de route** : l'API Claude (console.anthropic.com,
+distincte de l'abonnement Claude Pro) nécessite un compte payant à l'usage
+avec un crédit minimum de 5$ à l'achat. Face à ce coût, l'utilisateur a
+préféré une solution **100% gratuite** : saisie manuelle uniquement, sans
+extraction automatique et sans prise de photo du tout (les deux options
+« garder la photo comme référence visuelle » et « OCR gratuit type
+Tesseract.js » ont été proposées et écartées au profit de la simplicité —
+voir la conversation d'origine si l'utilisateur souhaite reconsidérer l'une
+de ces pistes plus tard). **Aucune clé API Anthropic n'est donc nécessaire
+pour cette fonctionnalité** — seule une base Supabase (gratuite) est requise.
+Si une extraction par photo est redemandée un jour, repartir de ce chantier
+initial (prompt d'extraction, schéma JSON, formulaire de confirmation) plutôt
+que de re-designer depuis zéro.
+
+## Stack et architecture
+
+- **Route serveur** (`nutrition.js` à la racine, monté depuis `server.js`) :
+  - `GET /nutrition` → sert `nutrition-page/index.html` (route explicite,
+    volontairement pas un fichier nommé `nutrition.html` dans `public/` pour
+    éviter qu'il soit *aussi* servi statiquement à une URL devinable comme
+    `/nutrition.html` en plus de `/nutrition`).
+  - `nutrition-page/` (dossier séparé de `public/`, servi en statique via
+    `app.use('/nutrition', express.static(...))`) contient `index.html`,
+    `nutrition.js`, `nutrition.css` — page vanilla JS sans framework, même
+    esprit que `public/client.js` (un `state` + une fonction `render()` qui
+    régénère `#app`), mais fichiers entièrement séparés du jeu de cartes.
+  - `GET /api/nutrition/products` (liste), `POST /api/nutrition/products`
+    (ajout), `DELETE /api/nutrition/products/:id` (suppression) : lisent/
+    écrivent directement dans Supabase **côté serveur uniquement** — le
+    client ne parle jamais directement à Supabase, seulement à ces 3 routes.
+  - `express.json()` ajouté globalement dans `server.js` pour ces routes
+    REST (le reste du site n'en avait pas besoin, tout passant par
+    Socket.io).
+- **Persistance : Supabase** (même compte/projet que celui prévu pour
+  l'historique des parties de cartes, voir plus haut dans ce fichier — une
+  seule base, deux tables séparées). Table `nutrition_products` (schéma
+  complet dans `supabase/nutrition_schema.sql`, à exécuter une fois dans le
+  SQL Editor de Supabase) : `id` (uuid), `name`, les colonnes numériques
+  nutritionnelles, `serving_size` (texte libre, optionnel), `vitamins_
+  minerals` (jsonb, tableau libre de `{name, amount}`), `created_at`.
+- **Client Supabase créé uniquement si les variables d'environnement
+  existent** (`nutrition.js`, variable module-scope `supabase`) : si
+  `SUPABASE_URL`/`SUPABASE_SERVICE_ROLE_KEY` sont absentes de `.env`, les 3
+  routes API répondent proprement `503` avec un message clair plutôt que de
+  planter au démarrage — permet au reste du serveur (jeu de cartes) de
+  continuer à fonctionner normalement même si Supabase n'est pas encore
+  configuré. Testé : démarrage du serveur, `/nutrition` (200), `/nutrition/
+  nutrition.js` (200), `/api/nutrition/products` (503 avec message clair
+  tant que Supabase n'est pas configuré), `/` du jeu (200, inchangé).
+- **Clé `service_role` Supabase, jamais `anon`** : utilisée uniquement côté
+  serveur (`nutrition.js`), jamais transmise au client — le navigateur ne
+  parle qu'aux routes `/api/nutrition/*` de notre propre serveur. Pas de
+  Row Level Security à configurer côté Supabase pour cette table tant que
+  seul le serveur y accède directement avec cette clé.
+- **`dotenv` ajouté comme dépendance** (`require('dotenv').config()` en
+  toute première ligne de `server.js`) : nécessaire pour que
+  `SUPABASE_URL`/`SUPABASE_SERVICE_ROLE_KEY` (et `RENDER_API_KEY`, déjà
+  présent) soient lus depuis `.env` par le process Node lui-même — avant ce
+  chantier, `.env` n'était utilisé que manuellement via `source .env` en
+  ligne de commande pour les vérifications de déploiement Render, jamais
+  chargé par le serveur.
+- **Validation/sanitisation côté serveur** (`nutrition.js`) : nom du produit
+  requis et tronqué à 200 caractères, champs numériques optionnels convertis
+  en `null` si vides/invalides (jamais `NaN` envoyé à Supabase), vitamines/
+  minéraux plafonnées à 20 entrées avec noms/valeurs tronqués — indépendante
+  de toute validation côté client, même principe que `sanitizeChatText` pour
+  le chat du jeu de cartes.
+
+## Ce qu'il reste à faire
+
+- **Créer le projet Supabase et exécuter `supabase/nutrition_schema.sql`** :
+  pas encore fait à ce stade — `SUPABASE_URL`/`SUPABASE_SERVICE_ROLE_KEY`
+  absentes de `.env`, donc la fonctionnalité répond `503` en l'état. Une
+  fois ces deux variables ajoutées à `.env` (jamais commitées, voir
+  `.gitignore`), tester réellement l'ajout/liste/suppression d'un produit de
+  bout en bout avant de considérer ce chantier terminé.
+- **Pas encore testé en conditions réelles** (ajout/suppression via
+  l'interface, plusieurs produits, champs vitamines/minéraux dynamiques) —
+  seulement vérifié que les routes répondent correctement (200/503) et que
+  le reste du site n'est pas cassé.

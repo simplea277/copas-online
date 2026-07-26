@@ -8,6 +8,8 @@
     "test": "node game/engine.test.js && node game/botAI.test.js && node game/botAI_expert.test.js"
   },
   "dependencies": {
+    "@supabase/supabase-js": "^2.110.8",
+    "dotenv": "^17.4.2",
     "express": "^4.19.2",
     "socket.io": "^4.7.5"
   },

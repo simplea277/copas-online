@@ -3,6 +3,8 @@
 // et fait tourner le moteur de jeu (game/engine.js) en temps réel.
 // ============================================================================
 
+require('dotenv').config();
+
 const path = require('path');
 const crypto = require('crypto');
 const express = require('express');
@@ -11,6 +13,7 @@ const { Server } = require('socket.io');
 const engine = require('./game/engine');
 const botAI = require('./game/botAI');
 const botAIExpert = require('./game/botAI_expert');
+const nutritionRouter = require('./nutrition');
 
 const app = express();
 const server = http.createServer(app);
@@ -22,6 +25,18 @@ const server = http.createServer(app);
 const io = new Server(server, { maxHttpBufferSize: 4 * 1024 * 1024 });
 
 app.use(express.static(path.join(__dirname, 'public')));
+
+// Section "Nutrition" — indépendante du jeu, accessible uniquement en tapant
+// /nutrition directement (aucun lien depuis le reste du site). Le fichier
+// HTML n'est volontairement pas dans public/ sous ce nom pour éviter qu'il
+// soit aussi servi statiquement à une URL devinable (ex: /nutrition-page.html) ;
+// seule cette route explicite y donne accès. Voir CLAUDE.md.
+app.use(express.json());
+app.get('/nutrition', (req, res) => {
+  res.sendFile(path.join(__dirname, 'nutrition-page', 'index.html'));
+});
+app.use('/nutrition', express.static(path.join(__dirname, 'nutrition-page')));
+app.use(nutritionRouter);
 
 const PORT = process.env.PORT || 3000;
 
