@@ -59,51 +59,6 @@ h2 {
   gap: 10px;
 }
 
-.vitamins-section {
-  border-top: 1px solid #eceeec;
-  padding-top: 10px;
-}
-
-.vitamins-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  font-size: 0.85rem;
-  color: #4a534d;
-  margin-bottom: 8px;
-}
-
-.vitamins-header button {
-  border: none;
-  background: #2f6b4f;
-  color: #fff;
-  border-radius: 6px;
-  padding: 4px 10px;
-  cursor: pointer;
-  font-size: 0.85rem;
-}
-
-.vitamin-row {
-  display: grid;
-  grid-template-columns: 1fr 1fr auto;
-  gap: 8px;
-  margin-bottom: 6px;
-}
-
-.vitamin-row input {
-  padding: 6px 8px;
-  border: 1px solid #ccd2ce;
-  border-radius: 6px;
-}
-
-.btn-remove-vitamin {
-  border: none;
-  background: #e4e7e5;
-  border-radius: 6px;
-  cursor: pointer;
-  padding: 0 10px;
-}
-
 .btn-submit {
   align-self: flex-start;
   border: none;

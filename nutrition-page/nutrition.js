@@ -7,9 +7,6 @@ const state = {
   loading: true,
   error: null,
   submitting: false,
-  // Lignes vitamines/minéraux du formulaire en cours de saisie (pas encore
-  // envoyées) : chaque ligne = { name, amount }.
-  draftVitamins: [],
 };
 
 const NUMBER_FIELDS = [
@@ -61,7 +58,7 @@ async function handleSubmit(evt) {
   const name = (formData.get('name') || '').toString().trim();
   if (!name) return;
 
-  const body = { name, vitamins_minerals: state.draftVitamins };
+  const body = { name };
   for (const field of NUMBER_FIELDS) {
     const raw = (formData.get(field.key) || '').toString().trim();
     body[field.key] = raw === '' ? null : Number(raw);
@@ -80,7 +77,6 @@ async function handleSubmit(evt) {
     });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(data.error || `Erreur ${res.status}`);
-    state.draftVitamins = [];
     await loadProducts();
   } catch (err) {
     state.error = err.message || "Erreur lors de l'ajout.";
@@ -104,36 +100,6 @@ async function handleDelete(id) {
   }
 }
 
-function addVitaminRow() {
-  state.draftVitamins.push({ name: '', amount: '' });
-  render();
-}
-
-function removeVitaminRow(index) {
-  state.draftVitamins.splice(index, 1);
-  render();
-}
-
-function updateVitaminRow(index, key, value) {
-  // Pas de re-render ici : on écrit directement le state pendant la frappe
-  // pour ne pas perdre le focus de l'input (même piège que le chat, voir
-  // CLAUDE.md) — le state est de toute façon relu au submit.
-  state.draftVitamins[index][key] = value;
-}
-
-function renderVitaminRows() {
-  return state.draftVitamins
-    .map(
-      (row, i) => `
-    <div class="vitamin-row" data-index="${i}">
-      <input type="text" placeholder="Nom (ex: Vitamine C)" class="vitamin-name" value="${escapeHtml(row.name)}" />
-      <input type="text" placeholder="Quantité (ex: 12 mg)" class="vitamin-amount" value="${escapeHtml(row.amount)}" />
-      <button type="button" class="btn-remove-vitamin" data-index="${i}" aria-label="Retirer">✕</button>
-    </div>`
-    )
-    .join('');
-}
-
 function renderForm() {
   return `
     <form id="product-form" class="product-form">
@@ -155,13 +121,6 @@ function renderForm() {
         <span>Portion de référence (optionnel)</span>
         <input type="text" name="serving_size" maxlength="100" value="${escapeHtml(DEFAULT_SERVING_SIZE)}" placeholder="Ex: pour 100 g" />
       </label>
-      <div class="vitamins-section">
-        <div class="vitamins-header">
-          <span>Vitamines / minéraux (optionnel)</span>
-          <button type="button" id="btn-add-vitamin">+ Ajouter</button>
-        </div>
-        <div id="vitamin-rows">${renderVitaminRows()}</div>
-      </div>
       ${state.error ? `<p class="form-error">${escapeHtml(state.error)}</p>` : ''}
       <button type="submit" class="btn-submit" ${state.submitting ? 'disabled' : ''}>
         ${state.submitting ? 'Ajout…' : 'Ajouter au tableau'}
@@ -170,7 +129,6 @@ function renderForm() {
 }
 
 function renderProductRow(p) {
-  const vitamins = Array.isArray(p.vitamins_minerals) ? p.vitamins_minerals : [];
   return `
     <tr>
       <td class="col-name">${escapeHtml(p.name)}${p.serving_size ? `<div class="serving-size">${escapeHtml(p.serving_size)}</div>` : ''}</td>
@@ -180,7 +138,6 @@ function renderProductRow(p) {
       <td>${formatNumber(p.fat_g)}<div class="sub">dont saturés ${formatNumber(p.saturated_fat_g)}</div></td>
       <td>${formatNumber(p.fiber_g)}</td>
       <td>${formatNumber(p.salt_g)}</td>
-      <td>${vitamins.length ? vitamins.map((v) => `${escapeHtml(v.name)}: ${escapeHtml(v.amount)}`).join('<br/>') : '—'}</td>
       <td><button type="button" class="btn-delete" data-id="${escapeHtml(p.id)}">Supprimer</button></td>
     </tr>`;
 }
@@ -200,7 +157,6 @@ function renderList() {
             <th>Lipides (g)</th>
             <th>Fibres (g)</th>
             <th>Sel (g)</th>
-            <th>Vitamines / minéraux</th>
             <th></th>
           </tr>
         </thead>
@@ -224,18 +180,6 @@ function attachHandlers() {
   const form = document.getElementById('product-form');
   if (form) form.addEventListener('submit', handleSubmit);
 
-  const addBtn = document.getElementById('btn-add-vitamin');
-  if (addBtn) addBtn.addEventListener('click', addVitaminRow);
-
-  document.querySelectorAll('.btn-remove-vitamin').forEach((btn) => {
-    btn.addEventListener('click', () => removeVitaminRow(Number(btn.dataset.index)));
-  });
-  document.querySelectorAll('.vitamin-name').forEach((input, i) => {
-    input.addEventListener('input', (e) => updateVitaminRow(i, 'name', e.target.value));
-  });
-  document.querySelectorAll('.vitamin-amount').forEach((input, i) => {
-    input.addEventListener('input', (e) => updateVitaminRow(i, 'amount', e.target.value));
-  });
   document.querySelectorAll('.btn-delete').forEach((btn) => {
     btn.addEventListener('click', () => handleDelete(btn.dataset.id));
   });
