@@ -3,17 +3,93 @@
 
 * { box-sizing: border-box; }
 
+:root {
+  --nut-bg: #f6f7f5;
+  --nut-text: #1f2a24;
+  --nut-muted: #7a8781;
+  --nut-card-bg: #fff;
+  --nut-border: #dfe3e0;
+  --nut-border-soft: #eceeec;
+  --nut-table-border: #aab5ad;
+  --nut-input-bg: #fbfcfb;
+  --nut-input-border: #ccd2ce;
+  --nut-accent: #2f6b4f;
+  --nut-accent-text: #fff;
+  --nut-error: #b3261e;
+  --nut-delete-bg: #f3e2e0;
+  --nut-delete-text: #8a2e22;
+}
+
+:root[data-theme="dark"] {
+  --nut-bg: #171d1a;
+  --nut-text: #e7ede9;
+  --nut-muted: #93a39a;
+  --nut-card-bg: #202823;
+  --nut-border: #34413a;
+  --nut-border-soft: #2a352e;
+  --nut-table-border: #56685d;
+  --nut-input-bg: #1a211d;
+  --nut-input-border: #3d4b43;
+  --nut-accent: #4c9974;
+  --nut-accent-text: #0c1310;
+  --nut-error: #ff8a80;
+  --nut-delete-bg: #3a2422;
+  --nut-delete-text: #ff9d90;
+}
+
 body {
   margin: 0;
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
-  background: #f6f7f5;
-  color: #1f2a24;
+  background: var(--nut-bg);
+  color: var(--nut-text);
 }
 
 .nutrition-page {
-  max-width: 960px;
+  max-width: 1500px;
   margin: 0 auto;
   padding: 24px 16px 64px;
+}
+
+.nutrition-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.btn-theme-toggle {
+  border: 1px solid var(--nut-border);
+  background: var(--nut-card-bg);
+  color: var(--nut-text);
+  border-radius: 999px;
+  padding: 6px 14px;
+  font-size: 0.85rem;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.nutrition-layout {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+@media (min-width: 860px) {
+  .nutrition-layout {
+    flex-direction: row;
+    align-items: flex-start;
+  }
+
+  .nutrition-col-form {
+    flex: 0 0 480px;
+    position: sticky;
+    top: 24px;
+  }
+
+  .nutrition-col-list {
+    flex: 1;
+    min-width: 0;
+  }
 }
 
 h1 {
@@ -28,8 +104,8 @@ h2 {
 }
 
 .product-form {
-  background: #fff;
-  border: 1px solid #dfe3e0;
+  background: var(--nut-card-bg);
+  border: 1px solid var(--nut-border);
   border-radius: 10px;
   padding: 18px;
   display: flex;
@@ -42,28 +118,35 @@ h2 {
   flex-direction: column;
   gap: 4px;
   font-size: 0.85rem;
-  color: #4a534d;
+  color: var(--nut-muted);
 }
 
 .field input {
   font-size: 1rem;
   padding: 8px 10px;
-  border: 1px solid #ccd2ce;
+  border: 1px solid var(--nut-input-border);
   border-radius: 6px;
-  background: #fbfcfb;
+  background: var(--nut-input-bg);
+  color: var(--nut-text);
+}
+
+.field input[type="number"] {
+  max-width: 110px;
 }
 
 .number-grid {
   display: grid;
-  grid-template-columns: 1fr;
-  gap: 10px;
+  grid-template-columns: repeat(2, 1fr);
+  grid-template-rows: repeat(4, auto);
+  grid-auto-flow: column;
+  gap: 10px 16px;
 }
 
 .btn-submit {
   align-self: flex-start;
   border: none;
-  background: #2f6b4f;
-  color: #fff;
+  background: var(--nut-accent);
+  color: var(--nut-accent-text);
   padding: 10px 18px;
   border-radius: 8px;
   font-size: 1rem;
@@ -76,20 +159,21 @@ h2 {
 }
 
 .form-error {
-  color: #b3261e;
+  color: var(--nut-error);
   font-size: 0.9rem;
   margin: 0;
 }
 
 .table-wrap {
   overflow-x: auto;
-  background: #fff;
-  border: 1px solid #dfe3e0;
+  background: var(--nut-card-bg);
+  border: 1px solid var(--nut-border);
   border-radius: 10px;
 }
 
 table {
   width: 100%;
+  table-layout: fixed;
   border-collapse: collapse;
   font-size: 0.85rem;
   white-space: nowrap;
@@ -98,27 +182,42 @@ table {
 th, td {
   text-align: left;
   padding: 8px 10px;
-  border-bottom: 1px solid #eceeec;
+  border: 2px solid var(--nut-table-border);
 }
 
 .col-name {
   white-space: normal;
-  min-width: 160px;
+  width: 115px;
+}
+
+.product-name {
+  cursor: pointer;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  word-break: break-word;
+}
+
+.product-name.expanded {
+  display: block;
+  -webkit-line-clamp: unset;
+  overflow: visible;
 }
 
 .serving-size, .sub {
-  color: #7a8781;
+  color: var(--nut-muted);
   font-size: 0.78rem;
 }
 
 .empty {
-  color: #7a8781;
+  color: var(--nut-muted);
 }
 
 .btn-delete {
   border: none;
-  background: #f3e2e0;
-  color: #8a2e22;
+  background: var(--nut-delete-bg);
+  color: var(--nut-delete-text);
   border-radius: 6px;
   padding: 5px 10px;
   cursor: pointer;

@@ -2,12 +2,37 @@
 // framework (même esprit que public/client.js) : un state + une fonction
 // render() qui régénère #app à chaque changement. Voir CLAUDE.md.
 
+const THEME_STORAGE_KEY = 'nutrition:theme';
+
+function getPreferredTheme() {
+  const saved = localStorage.getItem(THEME_STORAGE_KEY);
+  if (saved === 'dark' || saved === 'light') return saved;
+  return window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+}
+
+function applyTheme(theme) {
+  document.documentElement.setAttribute('data-theme', theme);
+}
+
 const state = {
   products: [],
   loading: true,
   error: null,
   submitting: false,
+  theme: getPreferredTheme(),
+  // Ids des produits dont le nom complet est déplié (au lieu de tronqué à 2
+  // lignes) suite à un clic sur "…".
+  expandedNames: new Set(),
 };
+
+applyTheme(state.theme);
+
+function toggleTheme() {
+  state.theme = state.theme === 'dark' ? 'light' : 'dark';
+  localStorage.setItem(THEME_STORAGE_KEY, state.theme);
+  applyTheme(state.theme);
+  render();
+}
 
 const NUMBER_FIELDS = [
   { key: 'calories_kcal', label: 'Calories (kcal)' },
@@ -85,6 +110,12 @@ async function handleSubmit(evt) {
   }
 }
 
+function toggleNameExpanded(id) {
+  if (state.expandedNames.has(id)) state.expandedNames.delete(id);
+  else state.expandedNames.add(id);
+  render();
+}
+
 async function handleDelete(id) {
   if (!confirm('Supprimer ce produit du tableau partagé ?')) return;
   try {
@@ -129,9 +160,10 @@ function renderForm() {
 }
 
 function renderProductRow(p) {
+  const expanded = state.expandedNames.has(p.id);
   return `
     <tr>
-      <td class="col-name">${escapeHtml(p.name)}${p.serving_size ? `<div class="serving-size">${escapeHtml(p.serving_size)}</div>` : ''}</td>
+      <td class="col-name"><div class="product-name${expanded ? ' expanded' : ''}" data-id="${escapeHtml(p.id)}" title="${escapeHtml(p.name)}">${escapeHtml(p.name)}</div>${p.serving_size ? `<div class="serving-size">${escapeHtml(p.serving_size)}</div>` : ''}</td>
       <td>${formatNumber(p.calories_kcal)}</td>
       <td>${formatNumber(p.protein_g)}</td>
       <td>${formatNumber(p.carbohydrates_g)}<div class="sub">dont sucres ${formatNumber(p.sugars_g)}</div></td>
@@ -150,7 +182,7 @@ function renderList() {
       <table>
         <thead>
           <tr>
-            <th>Produit</th>
+            <th class="col-name">Produit</th>
             <th>Calories</th>
             <th>Protéines (g)</th>
             <th>Glucides (g)</th>
@@ -168,10 +200,19 @@ function renderList() {
 function render() {
   app.innerHTML = `
     <div class="nutrition-page">
-      <h1>Nutrition</h1>
-      ${renderForm()}
-      <h2>Produits enregistrés</h2>
-      ${renderList()}
+      <div class="nutrition-header">
+        <h1>Nutrition</h1>
+        <button type="button" class="btn-theme-toggle" id="btn-theme-toggle">
+          ${state.theme === 'dark' ? '☀️ Mode clair' : '🌙 Mode sombre'}
+        </button>
+      </div>
+      <div class="nutrition-layout">
+        <div class="nutrition-col-form">${renderForm()}</div>
+        <div class="nutrition-col-list">
+          <h2>Produits enregistrés</h2>
+          ${renderList()}
+        </div>
+      </div>
     </div>`;
   attachHandlers();
 }
@@ -180,8 +221,15 @@ function attachHandlers() {
   const form = document.getElementById('product-form');
   if (form) form.addEventListener('submit', handleSubmit);
 
+  const themeBtn = document.getElementById('btn-theme-toggle');
+  if (themeBtn) themeBtn.addEventListener('click', toggleTheme);
+
   document.querySelectorAll('.btn-delete').forEach((btn) => {
     btn.addEventListener('click', () => handleDelete(btn.dataset.id));
+  });
+
+  document.querySelectorAll('.product-name').forEach((el) => {
+    el.addEventListener('click', () => toggleNameExpanded(el.dataset.id));
   });
 }
 
