@@ -14,14 +14,16 @@ const state = {
 
 const NUMBER_FIELDS = [
   { key: 'calories_kcal', label: 'Calories (kcal)' },
-  { key: 'protein_g', label: 'Protéines (g)' },
-  { key: 'carbohydrates_g', label: 'Glucides (g)' },
-  { key: 'sugars_g', label: 'dont sucres (g)' },
   { key: 'fat_g', label: 'Lipides (g)' },
   { key: 'saturated_fat_g', label: 'dont acides gras saturés (g)' },
+  { key: 'carbohydrates_g', label: 'Glucides (g)' },
+  { key: 'sugars_g', label: 'dont sucres (g)' },
   { key: 'fiber_g', label: 'Fibres (g)' },
+  { key: 'protein_g', label: 'Protéines (g)' },
   { key: 'salt_g', label: 'Sel (g)' },
 ];
+
+const DEFAULT_SERVING_SIZE = '100 g';
 
 const app = document.getElementById('app');
 
@@ -140,10 +142,6 @@ function renderForm() {
         <span>Nom du produit</span>
         <input type="text" name="name" required maxlength="200" placeholder="Ex: Yaourt nature Bio" />
       </label>
-      <label class="field">
-        <span>Portion de référence (optionnel)</span>
-        <input type="text" name="serving_size" maxlength="100" placeholder="Ex: pour 100 g" />
-      </label>
       <div class="number-grid">
         ${NUMBER_FIELDS.map(
           (f) => `
@@ -153,6 +151,10 @@ function renderForm() {
           </label>`
         ).join('')}
       </div>
+      <label class="field">
+        <span>Portion de référence (optionnel)</span>
+        <input type="text" name="serving_size" maxlength="100" value="${escapeHtml(DEFAULT_SERVING_SIZE)}" placeholder="Ex: pour 100 g" />
+      </label>
       <div class="vitamins-section">
         <div class="vitamins-header">
           <span>Vitamines / minéraux (optionnel)</span>
