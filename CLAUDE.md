@@ -841,10 +841,13 @@ réelles.
   résolu (1400ms) et le pli suivant qui démarre côté serveur avant qu'elle
   ne soit passée côté client.
 - **Chantier "historique des parties" (base de données) : pas encore
-  commencé.** Voir section "Prochaines étapes" ci-dessous — actuellement
-  aucune trace de Supabase ni de persistance dans le code (`grep -ri
-  supabase` ne remonte que ce fichier). Le projet reste 100% en mémoire
-  (voir plus haut) tant que ce chantier n'a pas démarré.
+  commencé.** Voir section "Prochaines étapes" ci-dessous. Le jeu de cartes
+  lui-même reste 100% en mémoire (voir plus haut) tant que ce chantier n'a
+  pas démarré — Supabase existe désormais dans le code (voir section
+  "Nutrition" plus bas), mais uniquement pour la table `nutrition_products`,
+  sans rapport avec les parties de Copas. Le même projet Supabase
+  (`copas-nutrition`) pourrait héberger une future table dédiée à
+  l'historique des parties, sans avoir à recréer de compte.
 
 ## Prochaines étapes prévues
 
@@ -1048,15 +1051,40 @@ que de re-designer depuis zéro.
   de toute validation côté client, même principe que `sanitizeChatText` pour
   le chat du jeu de cartes.
 
+## État : terminé et déployé (2026-08-05)
+
+Le projet Supabase (`copas-nutrition`) a été créé par l'utilisateur, le
+schéma `supabase/nutrition_schema.sql` exécuté (table créée sans RLS,
+cohérent avec l'accès service_role uniquement décrit plus haut). Note :
+Supabase a migré vers un nouveau format de clés (`sb_publishable_...` /
+`sb_secret_...` au lieu des anciens JWT `anon`/`service_role`) — la clé
+`sb_secret_...` fonctionne sans changement avec `@supabase/supabase-js` via
+`SUPABASE_SERVICE_ROLE_KEY`, aucune adaptation de code nécessaire.
+
+`SUPABASE_URL`/`SUPABASE_SERVICE_ROLE_KEY` ajoutées à `.env` en local, testé
+de bout en bout (ajout/liste/suppression d'un produit via `curl` puis
+confirmé par l'utilisateur via l'interface `/nutrition` dans son
+navigateur). Les mêmes variables ont été ajoutées aux variables
+d'environnement du service Render (`copas-online`) via l'API Render.
+
+**Piège découvert en déployant** : ajouter/modifier des variables
+d'environnement via l'API Render (`PUT .../env-vars`) ne déclenche PAS de
+redéploiement automatique du service — celui-ci continue de tourner avec
+l'ancien process tant qu'un déploiement n'est pas explicitement relancé
+(`POST .../deploys`). Repéré parce que `/api/nutrition/products` répondait
+encore 503 en prod juste après l'ajout des variables, alors qu'un premier
+essai en local fonctionnait déjà. À refaire pour toute variable d'env
+ajoutée/modifiée sur Render à l'avenir : changer la variable ⟶ déclencher un
+déploiement manuel ⟶ vérifier que le déploiement passe à `live` avant de
+retester.
+
+Prod vérifiée fonctionnelle (`https://copas-online.onrender.com/nutrition`,
+`/api/nutrition/products` répond 200).
+
 ## Ce qu'il reste à faire
 
-- **Créer le projet Supabase et exécuter `supabase/nutrition_schema.sql`** :
-  pas encore fait à ce stade — `SUPABASE_URL`/`SUPABASE_SERVICE_ROLE_KEY`
-  absentes de `.env`, donc la fonctionnalité répond `503` en l'état. Une
-  fois ces deux variables ajoutées à `.env` (jamais commitées, voir
-  `.gitignore`), tester réellement l'ajout/liste/suppression d'un produit de
-  bout en bout avant de considérer ce chantier terminé.
-- **Pas encore testé en conditions réelles** (ajout/suppression via
-  l'interface, plusieurs produits, champs vitamines/minéraux dynamiques) —
-  seulement vérifié que les routes répondent correctement (200/503) et que
-  le reste du site n'est pas cassé.
+- Rien de bloquant. Usage courant désormais : ajouter des produits au fil de
+  l'eau via `/nutrition`, aucune action de développement nécessaire pour ça.
+- Si le besoin s'en fait sentir : reconsidérer l'extraction automatique par
+  photo (OCR gratuit type Tesseract.js, ou API Claude si l'utilisateur
+  accepte le coût), voir section "Décision importante" ci-dessus.
