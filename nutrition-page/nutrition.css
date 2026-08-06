@@ -18,6 +18,8 @@
   --nut-error: #b3261e;
   --nut-delete-bg: #f3e2e0;
   --nut-delete-text: #8a2e22;
+  --nut-edit-bg: #e3e9f3;
+  --nut-edit-text: #29508a;
 }
 
 :root[data-theme="dark"] {
@@ -35,6 +37,8 @@
   --nut-error: #ff8a80;
   --nut-delete-bg: #3a2422;
   --nut-delete-text: #ff9d90;
+  --nut-edit-bg: #26314a;
+  --nut-edit-text: #9db8ee;
 }
 
 body {
@@ -158,6 +162,22 @@ h2 {
   cursor: default;
 }
 
+.form-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.btn-cancel-edit {
+  border: 1px solid var(--nut-border);
+  background: transparent;
+  color: var(--nut-muted);
+  padding: 10px 14px;
+  border-radius: 8px;
+  font-size: 0.9rem;
+  cursor: pointer;
+}
+
 .form-error {
   color: var(--nut-error);
   font-size: 0.9rem;
@@ -214,12 +234,26 @@ th, td {
   color: var(--nut-muted);
 }
 
-.btn-delete {
+.col-actions {
+  white-space: nowrap;
+}
+
+.btn-delete,
+.btn-edit {
   border: none;
-  background: var(--nut-delete-bg);
-  color: var(--nut-delete-text);
   border-radius: 6px;
   padding: 5px 10px;
   cursor: pointer;
   font-size: 0.8rem;
+}
+
+.btn-edit {
+  background: var(--nut-edit-bg);
+  color: var(--nut-edit-text);
+  margin-right: 6px;
+}
+
+.btn-delete {
+  background: var(--nut-delete-bg);
+  color: var(--nut-delete-text);
 }

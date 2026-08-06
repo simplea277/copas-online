@@ -23,6 +23,8 @@ const state = {
   // Ids des produits dont le nom complet est déplié (au lieu de tronqué à 2
   // lignes) suite à un clic sur "…".
   expandedNames: new Set(),
+  // Produit en cours de modification (formulaire pré-rempli), null = mode ajout.
+  editingProduct: null,
 };
 
 applyTheme(state.theme);
@@ -91,23 +93,45 @@ async function handleSubmit(evt) {
   const servingSize = (formData.get('serving_size') || '').toString().trim();
   body.serving_size = servingSize || null;
 
+  const editingId = state.editingProduct ? state.editingProduct.id : null;
+
   state.submitting = true;
   state.error = null;
   render();
   try {
-    const res = await fetch('/api/nutrition/products', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-    });
+    const res = await fetch(
+      editingId ? `/api/nutrition/products/${encodeURIComponent(editingId)}` : '/api/nutrition/products',
+      {
+        method: editingId ? 'PUT' : 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      }
+    );
     const data = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(data.error || `Erreur ${res.status}`);
+    state.editingProduct = null;
     await loadProducts();
   } catch (err) {
-    state.error = err.message || "Erreur lors de l'ajout.";
+    state.error = err.message || (editingId ? 'Erreur lors de la modification.' : "Erreur lors de l'ajout.");
     state.submitting = false;
     render();
   }
+}
+
+function handleEdit(id) {
+  const product = state.products.find((p) => p.id === id);
+  if (!product) return;
+  state.editingProduct = product;
+  state.error = null;
+  render();
+  const form = document.getElementById('product-form');
+  if (form) form.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+function handleCancelEdit() {
+  state.editingProduct = null;
+  state.error = null;
+  render();
 }
 
 function toggleNameExpanded(id) {
@@ -124,6 +148,7 @@ async function handleDelete(id) {
       const data = await res.json().catch(() => ({}));
       throw new Error(data.error || `Erreur ${res.status}`);
     }
+    if (state.editingProduct && state.editingProduct.id === id) state.editingProduct = null;
     await loadProducts();
   } catch (err) {
     state.error = err.message || 'Erreur lors de la suppression.';
@@ -132,30 +157,36 @@ async function handleDelete(id) {
 }
 
 function renderForm() {
+  const editing = state.editingProduct;
+  const nameValue = editing ? editing.name : '';
+  const servingValue = editing ? (editing.serving_size || '') : DEFAULT_SERVING_SIZE;
   return `
     <form id="product-form" class="product-form">
-      <h2>Ajouter un produit</h2>
+      <h2>${editing ? 'Modifier le produit' : 'Ajouter un produit'}</h2>
       <label class="field">
         <span>Nom du produit</span>
-        <input type="text" name="name" required maxlength="200" placeholder="Ex: Yaourt nature Bio" />
+        <input type="text" name="name" required maxlength="200" placeholder="Ex: Yaourt nature Bio" value="${escapeHtml(nameValue)}" />
       </label>
       <div class="number-grid">
         ${NUMBER_FIELDS.map(
           (f) => `
           <label class="field">
             <span>${escapeHtml(f.label)}</span>
-            <input type="number" step="any" name="${f.key}" />
+            <input type="number" step="any" name="${f.key}" value="${editing && editing[f.key] !== null && editing[f.key] !== undefined ? escapeHtml(editing[f.key]) : ''}" />
           </label>`
         ).join('')}
       </div>
       <label class="field">
         <span>Portion de référence (optionnel)</span>
-        <input type="text" name="serving_size" maxlength="100" value="${escapeHtml(DEFAULT_SERVING_SIZE)}" placeholder="Ex: pour 100 g" />
+        <input type="text" name="serving_size" maxlength="100" value="${escapeHtml(servingValue)}" placeholder="Ex: pour 100 g" />
       </label>
       ${state.error ? `<p class="form-error">${escapeHtml(state.error)}</p>` : ''}
-      <button type="submit" class="btn-submit" ${state.submitting ? 'disabled' : ''}>
-        ${state.submitting ? 'Ajout…' : 'Ajouter au tableau'}
-      </button>
+      <div class="form-actions">
+        <button type="submit" class="btn-submit" ${state.submitting ? 'disabled' : ''}>
+          ${state.submitting ? 'Enregistrement…' : (editing ? 'Enregistrer les modifications' : 'Ajouter au tableau')}
+        </button>
+        ${editing ? '<button type="button" class="btn-cancel-edit" id="btn-cancel-edit">Annuler</button>' : ''}
+      </div>
     </form>`;
 }
 
@@ -170,7 +201,10 @@ function renderProductRow(p) {
       <td>${formatNumber(p.fat_g)}<div class="sub">dont saturés ${formatNumber(p.saturated_fat_g)}</div></td>
       <td>${formatNumber(p.fiber_g)}</td>
       <td>${formatNumber(p.salt_g)}</td>
-      <td><button type="button" class="btn-delete" data-id="${escapeHtml(p.id)}">Supprimer</button></td>
+      <td class="col-actions">
+        <button type="button" class="btn-edit" data-id="${escapeHtml(p.id)}">Modifier</button>
+        <button type="button" class="btn-delete" data-id="${escapeHtml(p.id)}">Supprimer</button>
+      </td>
     </tr>`;
 }
 
@@ -224,8 +258,15 @@ function attachHandlers() {
   const themeBtn = document.getElementById('btn-theme-toggle');
   if (themeBtn) themeBtn.addEventListener('click', toggleTheme);
 
+  const cancelEditBtn = document.getElementById('btn-cancel-edit');
+  if (cancelEditBtn) cancelEditBtn.addEventListener('click', handleCancelEdit);
+
   document.querySelectorAll('.btn-delete').forEach((btn) => {
     btn.addEventListener('click', () => handleDelete(btn.dataset.id));
+  });
+
+  document.querySelectorAll('.btn-edit').forEach((btn) => {
+    btn.addEventListener('click', () => handleEdit(btn.dataset.id));
   });
 
   document.querySelectorAll('.product-name').forEach((el) => {

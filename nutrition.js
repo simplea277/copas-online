@@ -111,6 +111,40 @@ router.post('/api/nutrition/products', requireSupabase, withErrorHandling(async 
   res.status(201).json({ product: data });
 }));
 
+router.put('/api/nutrition/products/:id', requireSupabase, withErrorHandling(async (req, res) => {
+  const { id } = req.params;
+  const body = req.body || {};
+  const name = typeof body.name === 'string' ? body.name.trim().slice(0, MAX_NAME_LENGTH) : '';
+  if (!name) {
+    return res.status(400).json({ error: 'Nom du produit requis.' });
+  }
+
+  const product = {
+    name,
+    calories_kcal: parseOptionalNumber(body.calories_kcal),
+    protein_g: parseOptionalNumber(body.protein_g),
+    carbohydrates_g: parseOptionalNumber(body.carbohydrates_g),
+    sugars_g: parseOptionalNumber(body.sugars_g),
+    fat_g: parseOptionalNumber(body.fat_g),
+    saturated_fat_g: parseOptionalNumber(body.saturated_fat_g),
+    fiber_g: parseOptionalNumber(body.fiber_g),
+    salt_g: parseOptionalNumber(body.salt_g),
+    serving_size: typeof body.serving_size === 'string'
+      ? body.serving_size.trim().slice(0, MAX_SERVING_SIZE_LENGTH) || null
+      : null,
+    vitamins_minerals: sanitizeVitaminsMinerals(body.vitamins_minerals),
+  };
+
+  const { data, error } = await supabase
+    .from('nutrition_products')
+    .update(product)
+    .eq('id', id)
+    .select()
+    .single();
+  if (error) return res.status(500).json({ error: error.message });
+  res.json({ product: data });
+}));
+
 router.delete('/api/nutrition/products/:id', requireSupabase, withErrorHandling(async (req, res) => {
   const { id } = req.params;
   const { error } = await supabase.from('nutrition_products').delete().eq('id', id);
