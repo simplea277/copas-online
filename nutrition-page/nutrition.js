@@ -251,9 +251,21 @@ function render() {
   attachHandlers();
 }
 
+function handleFormFieldKeydown(evt) {
+  if (evt.key !== 'Enter' || evt.target.tagName !== 'INPUT') return;
+  evt.preventDefault();
+  const inputs = Array.from(evt.currentTarget.querySelectorAll('input'));
+  const index = inputs.indexOf(evt.target);
+  const next = inputs[index + 1];
+  if (next) next.focus();
+}
+
 function attachHandlers() {
   const form = document.getElementById('product-form');
-  if (form) form.addEventListener('submit', handleSubmit);
+  if (form) {
+    form.addEventListener('submit', handleSubmit);
+    form.addEventListener('keydown', handleFormFieldKeydown);
+  }
 
   const themeBtn = document.getElementById('btn-theme-toggle');
   if (themeBtn) themeBtn.addEventListener('click', toggleTheme);
