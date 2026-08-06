@@ -236,6 +236,9 @@ th, td {
 
 .col-actions {
   white-space: nowrap;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
 }
 
 .btn-delete,
@@ -250,7 +253,6 @@ th, td {
 .btn-edit {
   background: var(--nut-edit-bg);
   color: var(--nut-edit-text);
-  margin-right: 6px;
 }
 
 .btn-delete {
