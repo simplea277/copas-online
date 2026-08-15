@@ -25,6 +25,10 @@ const state = {
   expandedNames: new Set(),
   // Produit en cours de modification (formulaire pré-rempli), null = mode ajout.
   editingProduct: null,
+  // Calculateur nutritionnel : liste d'ingrédients ajoutés, chacun référencé
+  // par l'id du produit + un multiplicateur de sa portion de référence
+  // (ex: 2.5 = deux portions et demie).
+  calculatorItems: [],
 };
 
 applyTheme(state.theme);
@@ -149,6 +153,7 @@ async function handleDelete(id) {
       throw new Error(data.error || `Erreur ${res.status}`);
     }
     if (state.editingProduct && state.editingProduct.id === id) state.editingProduct = null;
+    state.calculatorItems = state.calculatorItems.filter((item) => item.productId !== id);
     await loadProducts();
   } catch (err) {
     state.error = err.message || 'Erreur lors de la suppression.';
@@ -208,6 +213,120 @@ function renderProductRow(p) {
     </tr>`;
 }
 
+function handleAddCalculatorItem(evt) {
+  evt.preventDefault();
+  const form = evt.target;
+  const formData = new FormData(form);
+  const productId = (formData.get('productId') || '').toString();
+  const multiplier = Number((formData.get('multiplier') || '').toString().trim());
+  if (!productId || !Number.isFinite(multiplier) || multiplier < 0) return;
+  state.calculatorItems.push({ productId, multiplier });
+  render();
+}
+
+function updateCalculatorItemMultiplier(index, rawValue) {
+  const item = state.calculatorItems[index];
+  if (!item) return;
+  const multiplier = Number(rawValue);
+  item.multiplier = Number.isFinite(multiplier) && multiplier >= 0 ? multiplier : 0;
+  render();
+}
+
+function removeCalculatorItem(index) {
+  state.calculatorItems.splice(index, 1);
+  render();
+}
+
+function computeCalculatorTotals() {
+  const totals = {};
+  for (const f of NUMBER_FIELDS) totals[f.key] = 0;
+  for (const item of state.calculatorItems) {
+    const product = state.products.find((p) => p.id === item.productId);
+    if (!product) continue;
+    const multiplier = Number(item.multiplier);
+    if (!Number.isFinite(multiplier) || multiplier < 0) continue;
+    for (const f of NUMBER_FIELDS) {
+      const value = product[f.key];
+      if (value === null || value === undefined) continue;
+      totals[f.key] += Number(value) * multiplier;
+    }
+  }
+  return totals;
+}
+
+function formatCalcTotal(n) {
+  return Math.round(n * 10) / 10;
+}
+
+function renderCalculatorAddForm() {
+  if (!state.products.length) {
+    return '<p class="empty">Ajoute d\'abord des produits au tableau pour pouvoir les combiner ici.</p>';
+  }
+  const sortedProducts = [...state.products].sort((a, b) => a.name.localeCompare(b.name, 'fr'));
+  const options = sortedProducts
+    .map((p) => `<option value="${escapeHtml(p.id)}">${escapeHtml(p.name)}${p.serving_size ? ` — portion : ${escapeHtml(p.serving_size)}` : ''}</option>`)
+    .join('');
+  return `
+    <form id="calculator-add-form" class="calculator-add-form">
+      <label class="field calc-field-product">
+        <span>Ingrédient</span>
+        <select name="productId" required>${options}</select>
+      </label>
+      <label class="field calc-field-qty">
+        <span>Quantité (× portion)</span>
+        <input type="number" name="multiplier" step="any" min="0" value="1" required />
+      </label>
+      <button type="submit" class="btn-submit">Ajouter au calcul</button>
+    </form>`;
+}
+
+function renderCalculatorItems() {
+  if (!state.calculatorItems.length) return '<p class="empty">Aucun ingrédient ajouté au calcul.</p>';
+  return `
+    <ul class="calculator-items">
+      ${state.calculatorItems
+        .map((item, index) => {
+          const product = state.products.find((p) => p.id === item.productId);
+          if (!product) return '';
+          return `
+          <li class="calculator-item">
+            <span class="calc-item-name">${escapeHtml(product.name)}</span>
+            <span class="calc-item-qty">
+              <input type="number" step="any" min="0" value="${escapeHtml(item.multiplier)}" data-index="${index}" class="calc-qty-input" />
+              <span class="calc-item-unit">× ${escapeHtml(product.serving_size || DEFAULT_SERVING_SIZE)}</span>
+            </span>
+            <button type="button" class="btn-remove-calc-item" data-index="${index}">Retirer</button>
+          </li>`;
+        })
+        .join('')}
+    </ul>`;
+}
+
+function renderCalculatorTotals() {
+  if (!state.calculatorItems.length) return '';
+  const totals = computeCalculatorTotals();
+  return `
+    <div class="calculator-totals">
+      <h3>Total combiné</h3>
+      <table class="calc-totals-table">
+        <tbody>
+          ${NUMBER_FIELDS.map((f) => `<tr><th>${escapeHtml(f.label)}</th><td>${formatCalcTotal(totals[f.key])}</td></tr>`).join('')}
+        </tbody>
+      </table>
+    </div>`;
+}
+
+function renderCalculator() {
+  return `
+    <section class="calculator-section">
+      <h2>Calculateur nutritionnel</h2>
+      <p class="calc-help">Combine plusieurs produits du tableau pour obtenir le total de leurs valeurs nutritionnelles. La quantité s'exprime en nombre de portions de référence (ex : 2.5 pour deux portions et demie).</p>
+      ${renderCalculatorAddForm()}
+      ${renderCalculatorItems()}
+      ${renderCalculatorTotals()}
+    </section>`;
+}
+
 function renderList() {
   if (state.loading) return '<p>Chargement…</p>';
   if (!state.products.length) return '<p class="empty">Aucun produit pour l\'instant.</p>';
@@ -247,6 +366,7 @@ function render() {
           ${renderList()}
         </div>
       </div>
+      ${renderCalculator()}
     </div>`;
   attachHandlers();
 }
@@ -283,6 +403,19 @@ function attachHandlers() {
 
   document.querySelectorAll('.product-name').forEach((el) => {
     el.addEventListener('click', () => toggleNameExpanded(el.dataset.id));
+  });
+
+  const calcAddForm = document.getElementById('calculator-add-form');
+  if (calcAddForm) calcAddForm.addEventListener('submit', handleAddCalculatorItem);
+
+  document.querySelectorAll('.calc-qty-input').forEach((input) => {
+    input.addEventListener('change', (evt) => {
+      updateCalculatorItemMultiplier(Number(evt.target.dataset.index), evt.target.value);
+    });
+  });
+
+  document.querySelectorAll('.btn-remove-calc-item').forEach((btn) => {
+    btn.addEventListener('click', () => removeCalculatorItem(Number(btn.dataset.index)));
   });
 }
 

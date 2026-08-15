@@ -259,3 +259,146 @@ th, td {
   background: var(--nut-delete-bg);
   color: var(--nut-delete-text);
 }
+
+.calculator-section {
+  margin-top: 32px;
+  background: var(--nut-card-bg);
+  border: 1px solid var(--nut-border);
+  border-radius: 10px;
+  padding: 18px;
+}
+
+.calculator-section h2 {
+  margin-top: 0;
+}
+
+.calc-help {
+  color: var(--nut-muted);
+  font-size: 0.85rem;
+  margin-top: 0;
+  margin-bottom: 16px;
+  max-width: 640px;
+}
+
+.calculator-add-form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 12px;
+  margin-bottom: 18px;
+}
+
+.calc-field-product {
+  flex: 1 1 260px;
+}
+
+.calc-field-product select {
+  width: 100%;
+  font-size: 1rem;
+  padding: 8px 10px;
+  border: 1px solid var(--nut-input-border);
+  border-radius: 6px;
+  background: var(--nut-input-bg);
+  color: var(--nut-text);
+}
+
+.calc-field-qty {
+  flex: 0 0 150px;
+}
+
+.calc-field-qty input {
+  width: 100%;
+}
+
+.calculator-items {
+  list-style: none;
+  margin: 0 0 18px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.calculator-item {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px 14px;
+  padding: 8px 12px;
+  border: 1px solid var(--nut-border-soft);
+  border-radius: 8px;
+}
+
+.calc-item-name {
+  flex: 1 1 180px;
+  font-weight: 600;
+}
+
+.calc-item-qty {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.calc-item-qty input {
+  width: 80px;
+  font-size: 0.95rem;
+  padding: 6px 8px;
+  border: 1px solid var(--nut-input-border);
+  border-radius: 6px;
+  background: var(--nut-input-bg);
+  color: var(--nut-text);
+}
+
+.calc-item-unit {
+  color: var(--nut-muted);
+  font-size: 0.8rem;
+  white-space: nowrap;
+}
+
+.btn-remove-calc-item {
+  border: none;
+  border-radius: 6px;
+  padding: 5px 10px;
+  cursor: pointer;
+  font-size: 0.8rem;
+  background: var(--nut-delete-bg);
+  color: var(--nut-delete-text);
+}
+
+.calculator-totals h3 {
+  font-size: 1rem;
+  margin: 0 0 10px;
+}
+
+.calc-totals-table {
+  border-collapse: collapse;
+  font-size: 0.9rem;
+}
+
+.calc-totals-table th,
+.calc-totals-table td {
+  text-align: left;
+  padding: 6px 14px 6px 0;
+  border-bottom: 1px solid var(--nut-border-soft);
+  font-weight: normal;
+}
+
+.calc-totals-table th {
+  color: var(--nut-muted);
+}
+
+.calc-totals-table td {
+  font-weight: 600;
+}
+
+@media (max-width: 480px) {
+  .calculator-add-form {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .calc-field-qty {
+    flex: 1 1 auto;
+  }
+}
