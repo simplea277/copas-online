@@ -95,8 +95,9 @@
     if (!nextWorkingDay) return 'Aucun prochain jour travaillé trouvé.';
     var shifts = nextWorkingDay.shifts;
     var first = shifts[0], last = shifts[shifts.length - 1];
-    return 'Prochain jour travaillé : ' + nextWorkingDay.dayLabel + ' · ' +
-      core.formatHM(first.start) + ' – ' + core.formatHM(last.end);
+    var dateParts = nextWorkingDay.dateStr.split('-').map(Number);
+    var longDate = core.formatDateLong(dateParts[0], dateParts[1], dateParts[2]);
+    return 'Reprise ' + longDate + ' · ' + core.formatHM(first.start) + ' – ' + core.formatHM(last.end);
   }
 
   function formatCountdown(totalSeconds) {
@@ -213,6 +214,9 @@
       var label = status.state === 'off' && status.offPeriod ? status.offPeriod.label : 'Repos';
       view.appendChild(text('div', 'day-header', status.dayLabel));
       view.appendChild(el('span', 'rest-badge', [document.createTextNode(label)]));
+      if (status.state === 'off') {
+        view.appendChild(text('div', 'day-subheader', nextWorkingDayLine(status.nextWorkingDay)));
+      }
       return;
     }
 

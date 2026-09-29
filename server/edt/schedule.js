@@ -105,12 +105,20 @@ const SCHOOL_TIMETABLE = [
   { slot: 'S4', courseStart: '17h20', courseEnd: '18h15', grille: '18h15 à 18h20' }
 ];
 
-// Périodes sans travail (vacances, jours fériés) — vide pour l'instant, à
-// remplir manuellement plus tard.
+// Périodes sans travail (vacances, jours fériés).
 // Format : { start: 'YYYY-MM-DD', end: 'YYYY-MM-DD', label: 'Vacances de la Toussaint' }
 // Bornes incluses. Pendant ces périodes : aucune notification, l'app affiche
-// "Repos" (comme un jour de repos hebdomadaire).
-const OFF_PERIODS = [];
+// le libellé de la période + la date de reprise (voir formatDateLong dans
+// schedule-core.js), plutôt qu'un simple "Repos" générique.
+const OFF_PERIODS = [
+  { start: '2026-10-17', end: '2026-11-01', label: 'Vacances de la Toussaint' },
+  { start: '2026-11-11', end: '2026-11-11', label: 'Jour férié (11 novembre)' },
+  { start: '2026-12-19', end: '2027-01-03', label: 'Vacances de Noël' },
+  { start: '2027-02-06', end: '2027-02-21', label: "Vacances d'hiver (zone C)" },
+  { start: '2027-04-03', end: '2027-04-18', label: 'Vacances de printemps (zone C)' },
+  { start: '2027-05-06', end: '2027-05-09', label: "Pont de l'Ascension" },
+  { start: '2027-07-03', end: '2027-08-31', label: "Vacances d'été" }
+];
 
 function getStatus(now) {
   return core.getStatus(WEEKLY_SCHEDULE, OFF_PERIODS, now || new Date());

@@ -32,6 +32,11 @@
   };
   var WORK_DAYS = ['tuesday', 'wednesday', 'thursday', 'friday'];
 
+  var MONTH_NAMES_FR = [
+    'janvier', 'février', 'mars', 'avril', 'mai', 'juin',
+    'juillet', 'août', 'septembre', 'octobre', 'novembre', 'décembre'
+  ];
+
   // Une couleur par type de poste, pour repérer d'un coup d'œil (demandé :
   // Grille en rouge, Pause en vert).
   var LABEL_COLORS = {
@@ -66,6 +71,15 @@
     var parts = hhmm.split(':');
     var h = Number(parts[0]);
     return h + 'h' + parts[1];
+  }
+
+  // (2026, 11, 4) -> "mercredi 4 novembre 2026" — utilisé pour afficher une
+  // date de reprise sans ambiguïté (une période off peut s'étaler sur
+  // plusieurs semaines/mois/années, un simple nom de jour ne suffit pas).
+  function formatDateLong(y, m, d) {
+    var weekdayIndex = weekdayIndexForDate(y, m, d);
+    var dayName = DAY_LABELS[WEEKDAY_NAMES[weekdayIndex]].toLowerCase();
+    return dayName + ' ' + d + ' ' + MONTH_NAMES_FR[m - 1] + ' ' + y;
   }
 
   // --- Dates civiles (indépendantes du fuseau horaire) -----------------------
@@ -268,6 +282,7 @@
   return {
     TIME_ZONE: TIME_ZONE,
     DAY_LABELS: DAY_LABELS,
+    MONTH_NAMES_FR: MONTH_NAMES_FR,
     WORK_DAYS: WORK_DAYS,
     WEEKDAY_NAMES: WEEKDAY_NAMES,
     LABEL_COLORS: LABEL_COLORS,
@@ -275,6 +290,7 @@
     pad2: pad2,
     timeStrToMinutes: timeStrToMinutes,
     formatHM: formatHM,
+    formatDateLong: formatDateLong,
     dateKey: dateKey,
     weekdayIndexForDate: weekdayIndexForDate,
     addDaysToDate: addDaysToDate,

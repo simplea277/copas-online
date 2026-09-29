@@ -152,6 +152,63 @@ test('getStatus avec offPeriods : un jour juste hors de la période reste normal
 });
 
 // ---------------------------------------------------------------------------
+// OFF_PERIODS réelles (vacances scolaires / jours fériés d'Alan, remplies
+// le 2026-09-30) — vérifie qu'une date en pleine période est bien "off" et
+// que la veille/le lendemain ne le sont pas.
+// ---------------------------------------------------------------------------
+
+test('OFF_PERIODS réelles : jour férié du 11 novembre 2026 off, veille (10) et lendemain (12) non', () => {
+  assert.strictEqual(core.isOffDate(schedule.OFF_PERIODS, '2026-11-10'), null);
+  const off = core.isOffDate(schedule.OFF_PERIODS, '2026-11-11');
+  assert.ok(off, 'le 11 novembre devrait être une période off');
+  assert.strictEqual(off.label, 'Jour férié (11 novembre)');
+  assert.strictEqual(core.isOffDate(schedule.OFF_PERIODS, '2026-11-12'), null);
+
+  // Vérifié aussi via getStatus (mardi 10 et jeudi 12 sont des jours
+  // normalement travaillés, donc un test significatif : ils ne basculent
+  // pas en "off" à cause de la période du 11).
+  assert.strictEqual(schedule.getStatus(parisInstant(2026, 11, 10, 10, 30)).state, 'in-shift');
+  assert.strictEqual(schedule.getStatus(parisInstant(2026, 11, 11, 10, 30)).state, 'off');
+  assert.strictEqual(schedule.getStatus(parisInstant(2026, 11, 12, 10, 30)).state, 'in-shift');
+});
+
+test('OFF_PERIODS réelles : vacances de la Toussaint (période longue), veille et lendemain de la période hors off', () => {
+  // Veille du début (16/10, vendredi travaillé) et lendemain de la fin
+  // (02/11, lundi = repos hebdo, mais pas "off" pour autant).
+  assert.strictEqual(core.isOffDate(schedule.OFF_PERIODS, '2026-10-16'), null);
+  assert.ok(core.isOffDate(schedule.OFF_PERIODS, '2026-10-17'), 'le premier jour de la période doit être off');
+  assert.ok(core.isOffDate(schedule.OFF_PERIODS, '2026-10-25'), 'une date en pleine période doit être off');
+  assert.ok(core.isOffDate(schedule.OFF_PERIODS, '2026-11-01'), 'le dernier jour de la période doit être off');
+  assert.strictEqual(core.isOffDate(schedule.OFF_PERIODS, '2026-11-02'), null);
+
+  const status = schedule.getStatus(parisInstant(2026, 10, 25, 10, 30));
+  assert.strictEqual(status.state, 'off');
+  assert.strictEqual(status.offPeriod.label, 'Vacances de la Toussaint');
+  // Reprise : premier jour travaillé après la période (02/11 = lundi = repos
+  // hebdo, donc le vrai premier jour travaillé est le mardi 03/11).
+  assert.strictEqual(status.nextWorkingDay.dateStr, '2026-11-03');
+});
+
+test('OFF_PERIODS réelles : les 7 périodes sont toutes bien formées (dates ISO, fin >= début, libellé non vide)', () => {
+  const isoDate = /^\d{4}-\d{2}-\d{2}$/;
+  assert.strictEqual(schedule.OFF_PERIODS.length, 7);
+  for (const period of schedule.OFF_PERIODS) {
+    assert.ok(isoDate.test(period.start), `start invalide : ${period.start}`);
+    assert.ok(isoDate.test(period.end), `end invalide : ${period.end}`);
+    assert.ok(period.end >= period.start, `période inversée : ${period.label}`);
+    assert.ok(period.label && period.label.length > 0, 'libellé manquant');
+  }
+});
+
+// ---------------------------------------------------------------------------
+// formatDateLong (date de reprise affichée dans l'app)
+// ---------------------------------------------------------------------------
+
+test('formatDateLong : "mercredi 11 novembre 2026"', () => {
+  assert.strictEqual(core.formatDateLong(2026, 11, 11), 'mercredi 11 novembre 2026');
+});
+
+// ---------------------------------------------------------------------------
 // Évènements de notification
 // ---------------------------------------------------------------------------
 
