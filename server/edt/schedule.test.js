@@ -208,6 +208,11 @@ test('formatDateLong : "mercredi 11 novembre 2026"', () => {
   assert.strictEqual(core.formatDateLong(2026, 11, 11), 'mercredi 11 novembre 2026');
 });
 
+test('formatDateShort / formatDateStrShort : "11 novembre 2026", sans le jour de la semaine', () => {
+  assert.strictEqual(core.formatDateShort(2026, 11, 11), '11 novembre 2026');
+  assert.strictEqual(core.formatDateStrShort('2026-11-11'), '11 novembre 2026');
+});
+
 // ---------------------------------------------------------------------------
 // Évènements de notification
 // ---------------------------------------------------------------------------

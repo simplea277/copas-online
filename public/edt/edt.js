@@ -470,12 +470,48 @@
     }
   }
 
+  function renderOffPeriodsList() {
+    var list = $('off-periods-list');
+    if (!list || !state.scheduleData) return;
+    clear(list);
+
+    var offPeriods = state.scheduleData.offPeriods || [];
+    if (offPeriods.length === 0) {
+      list.appendChild(text('div', 'off-periods-empty', 'Aucune période enregistrée.'));
+      return;
+    }
+
+    var todayStr = core.parisParts(new Date()).dateStr;
+
+    for (var i = 0; i < offPeriods.length; i++) {
+      var period = offPeriods[i];
+      var isCurrent = todayStr >= period.start && todayStr <= period.end;
+      var row = el('div', 'off-period-row' + (isCurrent ? ' current' : ''));
+
+      var labelSpan = document.createElement('span');
+      labelSpan.className = 'off-period-label';
+      labelSpan.textContent = period.label;
+      if (isCurrent) {
+        labelSpan.appendChild(text('span', 'off-period-now-badge', 'en cours'));
+      }
+      row.appendChild(labelSpan);
+
+      var datesText = period.start === period.end
+        ? core.formatDateStrShort(period.start)
+        : 'du ' + core.formatDateStrShort(period.start) + ' au ' + core.formatDateStrShort(period.end);
+      row.appendChild(text('span', 'off-period-dates', datesText));
+
+      list.appendChild(row);
+    }
+  }
+
   function setupSettings() {
     var overlay = $('settings-overlay');
     $('btn-settings').addEventListener('click', function () {
       overlay.hidden = false;
       $('install-hint').hidden = isStandalone();
       updateNotifStatus(describeNotifPermission());
+      renderOffPeriodsList();
     });
     $('btn-close-settings').addEventListener('click', function () { overlay.hidden = true; });
     overlay.addEventListener('click', function (e) {

@@ -339,6 +339,61 @@ html, body {
   margin-bottom: 14px;
 }
 
+#off-periods-section {
+  margin-bottom: 18px;
+}
+#off-periods-section h3 {
+  margin: 0 0 8px;
+  font-size: 14px;
+  color: var(--text-muted);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+}
+#off-periods-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.off-period-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  font-size: 14px;
+}
+.off-period-row.current {
+  border-color: var(--accent);
+}
+.off-period-label {
+  font-weight: 700;
+}
+.off-period-dates {
+  color: var(--text-muted);
+  font-size: 13px;
+  text-align: right;
+  flex-shrink: 0;
+}
+.off-period-now-badge {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 7px;
+  border-radius: 8px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  vertical-align: middle;
+}
+.off-periods-empty {
+  color: var(--text-muted);
+  font-size: 14px;
+}
+
 #notif-section, #subscription-section {
   margin-bottom: 14px;
 }

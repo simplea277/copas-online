@@ -82,6 +82,19 @@
     return dayName + ' ' + d + ' ' + MONTH_NAMES_FR[m - 1] + ' ' + y;
   }
 
+  // (2026, 11, 4) -> "4 novembre 2026" — même chose sans le nom du jour,
+  // utilisé pour afficher des bornes de période (liste des vacances/jours
+  // fériés) où le jour de la semaine n'apporte rien.
+  function formatDateShort(y, m, d) {
+    return d + ' ' + MONTH_NAMES_FR[m - 1] + ' ' + y;
+  }
+
+  // 'YYYY-MM-DD' -> "4 novembre 2026"
+  function formatDateStrShort(dateStr) {
+    var parts = dateStr.split('-').map(Number);
+    return formatDateShort(parts[0], parts[1], parts[2]);
+  }
+
   // --- Dates civiles (indépendantes du fuseau horaire) -----------------------
 
   function dateKey(y, m, d) { return y + '-' + pad2(m) + '-' + pad2(d); }
@@ -291,6 +304,8 @@
     timeStrToMinutes: timeStrToMinutes,
     formatHM: formatHM,
     formatDateLong: formatDateLong,
+    formatDateShort: formatDateShort,
+    formatDateStrShort: formatDateStrShort,
     dateKey: dateKey,
     weekdayIndexForDate: weekdayIndexForDate,
     addDaysToDate: addDaysToDate,
