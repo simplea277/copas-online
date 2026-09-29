@@ -1244,11 +1244,44 @@ a été ajouté à cette occasion (présence de chaque variable VAPID/
 `PUSH_SUBSCRIPTION`, jamais leur valeur) pour diagnostiquer ce genre de
 problème plus vite la prochaine fois.
 
+**Endpoint d'abonnement push tronqué (sans `https://`), même jour, juste
+après la correction ci-dessus.** Une fois VAPID reconnu comme configuré,
+`configured: true`, la clé publique correcte renvoyée par `/edt/api/
+vapid-public-key`, le bouton "Envoyer une notification test" échouait
+quand même, avec côté serveur une erreur `web-push` peu explicite :
+`VAPID audience is not a url. null//null`. Cause : la valeur de
+`PUSH_SUBSCRIPTION` collée sur Render contenait
+`"endpoint": "web.push.apple.com/..."` au lieu de `"endpoint":
+"https://web.push.apple.com/..."` — le préfixe `https://` avait été perdu
+quelque part entre le bouton "Copier" de l'app et le collage dans le
+champ Render (piste la plus probable : Safari tronque `https://` à
+l'affichage dans certains champs, notamment sa barre d'adresse ; un
+copier-coller repassant par un tel endroit peut le perdre pour de bon).
+Corrigé en deux temps : (1) réparation ponctuelle de la valeur déjà en
+place sur Render, directement via l'API Render (`PUT .../env-vars/
+PUSH_SUBSCRIPTION`) plutôt que de redemander à l'utilisateur de recopier
+à la main (même risque de troncature en chemin) — suivi d'un déploiement
+manuel puis d'une notification test confirmée reçue ; (2) ajout de
+`isValidSubscription()` dans `push.js` (endpoint présent ET en `https://`,
+clés `p256dh`/`auth` présentes), appelée à la fois à la lecture de
+`PUSH_SUBSCRIPTION` au démarrage (log d'erreur explicite si invalide,
+abonnement traité comme absent plutôt qu'accepté tel quel puis échouant
+bien plus tard à l'envoi) et dans `POST /edt/api/subscribe` (400 explicite
+au lieu d'accepter n'importe quoi) — pour détecter ce genre de corruption
+immédiatement la prochaine fois, au lieu d'un message d'erreur `web-push`
+qui ne pointe pas vers la vraie cause. **Vérifié robuste à un vrai
+redémarrage** : le déploiement qui a suivi ce correctif a lui-même vidé la
+mémoire du serveur (comme le fait la mise en veille Render chaque nuit) —
+la notification test envoyée juste après ce redémarrage a bien été reçue,
+confirmant que le repli sur `PUSH_SUBSCRIPTION` fonctionne de bout en bout
+après une coupure.
+
 ## Ce qu'il reste à faire
 
-- **Configurer cron-job.org (ou équivalent) sur `/ping`** pour garder le
-  serveur éveillé — pas fait par Claude (nécessite un compte externe côté
-  utilisateur), seule la route serveur est prête.
+- Rien de bloquant. `cron-job.org` configuré par l'utilisateur sur `/ping`
+  (intervalle 5-10 min, sous le seuil de mise en veille de 15 min de
+  Render), boucle de notifications vérifiée fonctionnelle après un
+  redémarrage réel du serveur (voir bug ci-dessus).
 - **`OFF_PERIODS` à remplir par l'utilisateur** au fil du temps (vacances,
   jours fériés) — vide pour l'instant, voir format documenté dans
   `server/edt/schedule.js`.
