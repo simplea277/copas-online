@@ -20,15 +20,43 @@ const core = schedule.core;
 
 const VAPID_PUBLIC_KEY = process.env.VAPID_PUBLIC_KEY || '';
 const VAPID_PRIVATE_KEY = process.env.VAPID_PRIVATE_KEY || '';
-const VAPID_SUBJECT = process.env.VAPID_SUBJECT || 'mailto:contact@example.com';
+const VAPID_SUBJECT_RAW = process.env.VAPID_SUBJECT || '';
+
+// web-push exige un "subject" au format mailto:... ou https://... (sinon
+// setVapidDetails lève une exception) — un piège rencontré en pratique :
+// la variable d'environnement collée sur Render contenait juste l'adresse
+// e-mail ("tardiswho08@gmail.com"), sans le préfixe "mailto:", ce qui
+// faisait échouer silencieusement toute la configuration VAPID (`configured`
+// restait `false`) alors que les deux clés elles-mêmes étaient correctes.
+// On normalise ici en filet de sécurité plutôt que de dépendre uniquement
+// d'une valeur bien formée côté Render.
+function normalizeVapidSubject(raw) {
+  if (!raw) return 'mailto:contact@example.com';
+  if (raw.startsWith('mailto:') || raw.startsWith('http://') || raw.startsWith('https://')) return raw;
+  return 'mailto:' + raw;
+}
+
+const VAPID_SUBJECT = normalizeVapidSubject(VAPID_SUBJECT_RAW);
+
+// Log de démarrage : présence de chaque variable uniquement, jamais leur
+// valeur (clés/abonnement = secrets).
+console.log(
+  '[edt/push] Variables au démarrage — ' +
+  `VAPID_PUBLIC_KEY: ${VAPID_PUBLIC_KEY ? 'présente' : 'ABSENTE'}, ` +
+  `VAPID_PRIVATE_KEY: ${VAPID_PRIVATE_KEY ? 'présente' : 'ABSENTE'}, ` +
+  `VAPID_SUBJECT: ${VAPID_SUBJECT_RAW ? 'présente' : 'absente (repli par défaut utilisé)'}` +
+  (VAPID_SUBJECT_RAW && VAPID_SUBJECT !== VAPID_SUBJECT_RAW ? ' (normalisée : préfixe "mailto:" ajouté automatiquement)' : '') + ', ' +
+  `PUSH_SUBSCRIPTION: ${process.env.PUSH_SUBSCRIPTION ? 'présente' : 'absente'}`
+);
 
 let configured = false;
 if (VAPID_PUBLIC_KEY && VAPID_PRIVATE_KEY) {
   try {
     webpush.setVapidDetails(VAPID_SUBJECT, VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY);
     configured = true;
+    console.log('[edt/push] Configuration VAPID OK — notifications push activées.');
   } catch (e) {
-    console.error('[edt/push] Clés VAPID invalides :', e.message);
+    console.error('[edt/push] Clés/sujet VAPID invalides :', e.message);
   }
 } else {
   console.warn('[edt/push] VAPID_PUBLIC_KEY/VAPID_PRIVATE_KEY absentes de l\'environnement : notifications push désactivées.');
@@ -173,5 +201,6 @@ module.exports = {
   stop,
   // Exposé uniquement pour les tests unitaires (server/edt/schedule.test.js).
   _tick: tick,
-  _sentKeys: sentKeys
+  _sentKeys: sentKeys,
+  _normalizeVapidSubject: normalizeVapidSubject
 };

@@ -199,6 +199,30 @@ test('WEEKLY_SCHEDULE : chaque jour est une grille contiguë sans trou ni chevau
 });
 
 // ---------------------------------------------------------------------------
+// push.js : normalisation de VAPID_SUBJECT — régression du 2026-09-29
+// (la variable collée sur Render ne contenait que l'adresse e-mail, sans le
+// préfixe "mailto:", ce qui faisait échouer silencieusement webpush.
+// setVapidDetails et laissait `configured` à `false` malgré des clés
+// valides).
+// ---------------------------------------------------------------------------
+
+test('normalizeVapidSubject : ajoute "mailto:" à une adresse e-mail nue', () => {
+  const push = require('./push');
+  assert.strictEqual(push._normalizeVapidSubject('tardiswho08@gmail.com'), 'mailto:tardiswho08@gmail.com');
+});
+
+test('normalizeVapidSubject : laisse intact un sujet déjà valide (mailto:/http(s):)', () => {
+  const push = require('./push');
+  assert.strictEqual(push._normalizeVapidSubject('mailto:foo@bar.com'), 'mailto:foo@bar.com');
+  assert.strictEqual(push._normalizeVapidSubject('https://example.com'), 'https://example.com');
+});
+
+test('normalizeVapidSubject : replie sur une valeur par défaut si absent', () => {
+  const push = require('./push');
+  assert.strictEqual(push._normalizeVapidSubject(''), 'mailto:contact@example.com');
+});
+
+// ---------------------------------------------------------------------------
 // push.js : la boucle ne doit jamais planter, même sans configuration/
 // abonnement (cas par défaut en environnement de test, sans clés VAPID).
 // ---------------------------------------------------------------------------
