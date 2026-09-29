@@ -1088,3 +1088,168 @@ Prod vérifiée fonctionnelle (`https://copas-online.onrender.com/nutrition`,
 - Si le besoin s'en fait sentir : reconsidérer l'extraction automatique par
   photo (OCR gratuit type Tesseract.js, ou API Claude si l'utilisateur
   accepte le coût), voir section "Décision importante" ci-dessus.
+
+---
+
+# Section "EDT" (chantier séparé, sans rapport avec le jeu de cartes)
+
+## Qu'est-ce que c'est
+
+Ajoutée le 2026-09-29, à la demande de l'utilisateur, **complètement
+indépendante du jeu Copas** — partage juste le même serveur Express/process
+Node et le même déploiement Render. Une PWA (Progressive Web App) installable
+sur l'écran d'accueil de l'iPhone de l'utilisateur, qui affiche son emploi du
+temps de poste AED (agent·e éducatif·ve, mardi à vendredi) en temps réel
+(poste précédent/actuel/suivant, compte à rebours) et envoie des
+notifications push 3 minutes puis 30 secondes avant chaque changement de
+poste (y compris la fin de service).
+
+**Accès caché, comme `/nutrition`.** La page vit à `/edt/` — aucun lien
+depuis le reste du site. Contrairement à `/nutrition`, il n'y a pas
+vraiment d'enjeu de confidentialité ici (emploi du temps personnel, pas de
+données d'autrui) : c'est juste resté cohérent avec le pattern déjà en place.
+
+## Stack et architecture
+
+- **Fichiers dédiés, aucune modification du code du jeu** (seulement 3
+  lignes ajoutées dans `server.js` : les deux `require` et le montage des
+  routes/démarrage de la boucle push, sur le même modèle que
+  `nutritionRouter`) :
+  - `public/edt/` : `index.html`, `edt.css`, `edt.js` (client vanilla JS,
+    pattern `state`+`render()` comme `public/client.js` du jeu),
+    `schedule-core.js` (logique horaire **pure et partagée**, voir plus
+    bas), `sw.js` (service worker), `manifest.json`, `icons/` (icônes PNG
+    générées par un script temporaire, à remplacer par une vraie icône si
+    envie — voir "Ce qu'il reste à faire").
+  - `server/edt/` : `schedule.js` (données : grille hebdo, tableau horaires
+    lycée, `OFF_PERIODS`), `push.js` (web-push + boucle de planification),
+    `routes.js` (montage Express), `schedule.test.js` (tests unitaires).
+- **`public/edt/schedule-core.js` : module UMD partagé tel quel entre le
+  client (`<script src="/edt/schedule-core.js">`, expose `window.EdtCore`)
+  et le serveur (`require(...)` depuis `server/edt/schedule.js`)** —
+  volontairement sans dépendance externe (Luxon envisagé mais écarté :
+  `Intl.DateTimeFormat` suffit et évite une dépendance de plus). Contient
+  toute la logique testable : conversion heure de Paris ⇄ UTC (avec heure
+  d'été/hiver), poste précédent/actuel/suivant, jours de repos/off,
+  recherche du prochain jour travaillé, calcul des évènements de
+  notification. Une seule source de vérité pour cette logique, jamais
+  dupliquée entre client et serveur.
+  - **Heure de Paris sans dépendance** : le décalage Paris/UTC pour une
+    date donnée est échantillonné à midi UTC ce jour-là
+    (`parisOffsetMinutesForDate`), plage sans ambiguïté car la France
+    métropolitaine est toujours en avance sur UTC (+1h hiver, +2h été,
+    jamais 0 ni négatif) et les transitions heure d'été/hiver ont lieu tôt
+    le matin, loin de midi. `parisWallTimeToInstant` convertit une heure
+    civile de Paris (ex: "10h10 le 14 juillet 2026") en instant UTC exact à
+    partir de ce décalage — utilisé par `push.js` pour calculer l'instant
+    précis de chaque notification.
+- **Données de l'emploi du temps** (`server/edt/schedule.js`) : grille
+  hebdomadaire mardi-vendredi transcrite telle que fournie par
+  l'utilisateur (contiguïté vérifiée par un test dédié — chaque poste
+  s'enchaîne exactement où le précédent finit, sans trou ni chevauchement).
+  `OFF_PERIODS` (vacances/jours fériés) est un tableau vide à remplir
+  manuellement par l'utilisateur au fil du temps (format `{start, end,
+  label}` en `YYYY-MM-DD`, bornes incluses, documenté en commentaire dans
+  le fichier) — pendant une période listée là, l'app affiche "Repos" et
+  aucune notification n'est envoyée, comme un jour de repos hebdomadaire.
+- **Notifications push (`web-push`, clés VAPID)** :
+  - `VAPID_PUBLIC_KEY`/`VAPID_PRIVATE_KEY`/`VAPID_SUBJECT` lues depuis
+    l'environnement (jamais commitées). Générées une fois via
+    `npx web-push generate-vapid-keys`, transmises à l'utilisateur en
+    conversation — **à ajouter manuellement dans le dashboard Render**
+    (voir "Variables d'environnement à ajouter sur Render" transmis au
+    moment de ce chantier).
+  - **Abonnement push gardé en mémoire, jamais persisté sur disque** (le
+    disque de Render gratuit est effacé à chaque veille/redémarrage). Repli
+    au démarrage sur la variable d'environnement `PUSH_SUBSCRIPTION`
+    (JSON) : après avoir cliqué "Activer les notifications" dans l'app
+    (réglages ⚙), la page affiche l'abonnement en JSON avec un bouton
+    "Copier", à coller dans cette variable sur Render pour qu'il survive
+    aux redémarrages. La page renvoie aussi automatiquement l'abonnement
+    existant au serveur à chaque ouverture (`registerServiceWorkerAndResend
+    Subscription` dans `edt.js`), au cas où le serveur l'aurait perdu.
+  - **Boucle de planification côté serveur** (`push.js`, `setInterval` 5s,
+    `unref()`-ée pour ne pas empêcher le process de s'arrêter proprement) :
+    à chaque tick, si aujourd'hui est un jour travaillé (et hors période
+    off), calcule les évènements de la journée (chaque début de poste + la
+    fin de service) via `core.getNotificationEvents`, et pour chacun,
+    vérifie si l'instant "3 min avant" ou "30 s avant" tombe dans les 60
+    dernières secondes (`TOLERANCE_MS`, rattrape un tick manqué après un
+    réveil/redémarrage sans jamais envoyer une notif très en retard).
+    `sentKeys` (Set en mémoire, clé = date+évènement+décalage) empêche tout
+    doublon ; purgée chaque jour des clés d'un jour différent
+    (`pruneSentKeys`) pour ne pas grossir indéfiniment.
+  - **Abonnement expiré (404/410)** : logué clairement côté serveur et
+    l'abonnement en mémoire est effacé (`subscription = null`), plutôt que
+    de continuer à tenter d'envoyer dans le vide.
+- **Route `GET /ping`** (à la racine, `server.js`, sans rapport avec le jeu
+  ni l'EDT) : répond `"ok"` (200), destinée à un service externe type
+  cron-job.org pour garder le serveur Render éveillé (le plan gratuit
+  s'endort après inactivité).
+- **Interface mobile uniquement** (`public/edt/edt.css`/`edt.js`) : en-tête
+  fixe (jour + horaires de la journée), vue "Maintenant" au centre
+  (poste précédent grisé / poste actuel en très grand avec compte à rebours
+  mis à jour chaque seconde / poste suivant), barre d'onglets en bas
+  (Maintenant/Journée/Semaine/Horaires lycée), mode sombre automatique
+  (`prefers-color-scheme`), safe-area iPhone respectée (encoche + barre du
+  bas). Une couleur par type de poste (`LABEL_COLORS` dans
+  `schedule-core.js` — Grille en rouge, Pause en vert, etc.) appliquée en
+  style inline sur les badges/puces de poste.
+  - Réglages (installation/notifications) regroupés dans un panneau
+    accessible via l'icône ⚙ de l'en-tête plutôt qu'un 5ᵉ onglet, pour ne
+    pas alourdir la barre principale — non explicitement demandé sous
+    cette forme, mais nécessaire pour loger le bouton "Activer les
+    notifications", le message d'aide à l'installation (`navigator.
+    standalone` false) et le JSON d'abonnement à copier quelque part dans
+    l'interface.
+
+## État : implémenté et déployé (2026-09-29), pas encore testé en conditions réelles
+
+Codé, testé automatiquement (`server/edt/schedule.test.js`, ajouté à
+`npm test` — logique horaire : poste actuel/précédent/suivant, heure de
+Paris hiver/été, jours de repos, jours off, contiguïté de la grille,
+calcul des évènements de notification) et vérifié par requêtes HTTP
+directes (toutes les routes `/ping`, `/edt/*`, `/edt/api/*` répondent comme
+attendu, en local et en prod après déploiement) — mais **jamais encore
+ouvert par l'utilisateur sur un vrai iPhone**. À valider en priorité au
+prochain retour :
+
+- Installation sur l'écran d'accueil (le message d'aide s'affiche-t-il
+  bien tant que ce n'est pas fait ? l'icône/le nom sont-ils corrects une
+  fois ajoutée ?).
+- Activation des notifications (permission iOS, abonnement créé, JSON
+  affiché avec bouton "Copier" fonctionnel).
+- Après avoir collé l'abonnement dans `PUSH_SUBSCRIPTION` sur Render (+
+  déclenché un déploiement manuel, voir piège déjà noté dans la section
+  Nutrition ci-dessus — s'applique identiquement ici) : notification test
+  reçue, puis notifications réelles autour d'un changement de poste.
+- Lisibilité/mise en page réelle sur iPhone (safe-area, tailles de police,
+  mode sombre).
+
+**Icônes PWA actuelles : simples placeholders générés par script** (cercle
+doré sur fond bleu nuit avec un repère façon aiguilles d'horloge, généré
+par un script Node temporaire supprimé après usage — voir historique de
+commit si besoin de le reproduire), pas une vraie icône designée. À
+remplacer si l'utilisateur veut quelque chose de plus soigné.
+
+## Ce qu'il reste à faire
+
+- **Test en conditions réelles sur iPhone** (voir ci-dessus) — priorité
+  numéro 1 au prochain retour de l'utilisateur.
+- **Variables d'environnement à ajouter sur Render**, transmises à
+  l'utilisateur à la fin de ce chantier : `VAPID_PUBLIC_KEY`,
+  `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT` (clés VAPID, générées une seule fois
+  — les réutiliser telles quelles, ne pas en regénérer d'autres sans
+  raison, ça invaliderait tout abonnement déjà créé) ; `PUSH_SUBSCRIPTION`
+  à ajouter/mettre à jour après la première activation des notifications
+  depuis l'app. Ne pas oublier de déclencher un déploiement manuel après
+  tout ajout/changement de variable (l'API Render n'en déclenche pas
+  automatiquement, piège déjà noté dans la section Nutrition).
+- **Configurer cron-job.org (ou équivalent) sur `/ping`** pour garder le
+  serveur éveillé — pas fait par Claude (nécessite un compte externe côté
+  utilisateur), seule la route serveur est prête.
+- **`OFF_PERIODS` à remplir par l'utilisateur** au fil du temps (vacances,
+  jours fériés) — vide pour l'instant, voir format documenté dans
+  `server/edt/schedule.js`.
+- Icônes PWA à remplacer par quelque chose de plus soigné si envie (voir
+  ci-dessus).
