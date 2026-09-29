@@ -5,13 +5,14 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "test": "node game/engine.test.js && node game/botAI.test.js && node game/botAI_expert.test.js"
+    "test": "node game/engine.test.js && node game/botAI.test.js && node game/botAI_expert.test.js && node server/edt/schedule.test.js"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.110.8",
     "dotenv": "^17.4.2",
     "express": "^4.19.2",
-    "socket.io": "^4.7.5"
+    "socket.io": "^4.7.5",
+    "web-push": "^3.6.7"
   },
   "engines": {
     "node": ">=18"

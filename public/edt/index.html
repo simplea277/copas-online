@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1, user-scalable=no" />
+<title>Mon EDT</title>
+
+<link rel="manifest" href="/edt/manifest.json" />
+<meta name="theme-color" content="#0f1420" />
+
+<!-- PWA iOS : seule une app lancée depuis l'écran d'accueil peut recevoir des
+     notifications push sur iPhone — ces balises + l'icône ci-dessous sont ce
+     qui permet à Safari de proposer "Sur l'écran d'accueil" correctement. -->
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<meta name="apple-mobile-web-app-title" content="Mon EDT" />
+<link rel="apple-touch-icon" href="/edt/icons/icon-180.png" />
+<link rel="icon" href="/edt/icons/icon-192.png" />
+
+<link rel="stylesheet" href="/edt/edt.css" />
+</head>
+<body>
+
+<div id="app">
+  <header id="app-header">
+    <div id="header-day"></div>
+    <button id="btn-settings" type="button" aria-label="Réglages">⚙</button>
+  </header>
+
+  <main id="app-main">
+    <section id="view-now" class="view" data-view="now"></section>
+    <section id="view-day" class="view" data-view="day" hidden></section>
+    <section id="view-week" class="view" data-view="week" hidden></section>
+    <section id="view-school" class="view" data-view="school" hidden></section>
+  </main>
+
+  <nav id="tab-bar">
+    <button class="tab-btn" data-tab="now" type="button">
+      <span class="tab-icon">🕒</span><span class="tab-label">Maintenant</span>
+    </button>
+    <button class="tab-btn" data-tab="day" type="button">
+      <span class="tab-icon">📋</span><span class="tab-label">Journée</span>
+    </button>
+    <button class="tab-btn" data-tab="week" type="button">
+      <span class="tab-icon">📅</span><span class="tab-label">Semaine</span>
+    </button>
+    <button class="tab-btn" data-tab="school" type="button">
+      <span class="tab-icon">🏫</span><span class="tab-label">Horaires lycée</span>
+    </button>
+  </nav>
+
+  <div id="settings-overlay" hidden>
+    <div id="settings-panel">
+      <div id="settings-header">
+        <h2>Réglages</h2>
+        <button id="btn-close-settings" type="button" aria-label="Fermer">✕</button>
+      </div>
+      <div id="settings-body">
+        <div id="install-hint" hidden>
+          Pour recevoir les notifications sur iPhone, ajoute d'abord cette page
+          à ton écran d'accueil : appuie sur <strong>Partager</strong>, puis
+          <strong>Sur l'écran d'accueil</strong>. Rouvre ensuite l'app depuis
+          l'icône ajoutée.
+        </div>
+
+        <div id="notif-section">
+          <p id="notif-status">Notifications : vérification…</p>
+          <button id="btn-enable-notifs" type="button">Activer les notifications</button>
+          <button id="btn-test-push" type="button">Envoyer une notification test</button>
+        </div>
+
+        <div id="subscription-section" hidden>
+          <p>
+            Le plan gratuit Render efface l'abonnement à chaque veille/
+            redémarrage. Colle ce JSON dans la variable d'environnement
+            <code>PUSH_SUBSCRIPTION</code> sur Render pour qu'il survive.
+          </p>
+          <textarea id="subscription-json" readonly rows="6"></textarea>
+          <button id="btn-copy-subscription" type="button">Copier</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="/edt/schedule-core.js"></script>
+<script src="/edt/edt.js"></script>
+</body>
+</html>

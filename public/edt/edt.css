@@ -1,0 +1,382 @@
+/* ============================================================================
+   Section EDT — feuille de style dédiée, sans rapport avec style.css du jeu
+   Copas. Mobile uniquement (iPhone), sobre, grands caractères, mode sombre
+   automatique (prefers-color-scheme), safe-area respectée.
+   ============================================================================ */
+
+:root {
+  --bg: #f4f5f8;
+  --bg-elevated: #ffffff;
+  --text: #14161c;
+  --text-muted: #6b7280;
+  --text-faint: #9aa1ad;
+  --border: #e2e4ea;
+  --accent: #3d6dff;
+  --danger: #e5484d;
+  color-scheme: light dark;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0f1420;
+    --bg-elevated: #171d2b;
+    --text: #f2f4f8;
+    --text-muted: #9aa3b5;
+    --text-faint: #6b7385;
+    --border: #262d40;
+    --accent: #6f93ff;
+  }
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, sans-serif;
+  -webkit-text-size-adjust: 100%;
+  height: 100%;
+}
+
+#app {
+  min-height: 100dvh;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+/* --- Header ------------------------------------------------------------- */
+
+#app-header {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: calc(env(safe-area-inset-top, 0px) + 10px) 16px 10px;
+  background: var(--bg-elevated);
+  border-bottom: 1px solid var(--border);
+}
+
+#header-day {
+  font-size: 17px;
+  font-weight: 700;
+  letter-spacing: 0.2px;
+}
+
+#btn-settings {
+  min-width: 40px;
+  min-height: 40px;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 20px;
+  border-radius: 10px;
+  cursor: pointer;
+}
+#btn-settings:active { background: var(--border); }
+
+/* --- Main / vues ---------------------------------------------------------- */
+
+#app-main {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px 16px calc(env(safe-area-inset-bottom, 0px) + 96px);
+}
+
+.view[hidden] { display: none; }
+
+/* --- Vue "Maintenant" ---------------------------------------------------- */
+
+.now-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 6px;
+  padding: 24px 12px 8px;
+}
+
+.now-adjacent {
+  color: var(--text-faint);
+  font-size: 15px;
+  min-height: 20px;
+}
+.now-adjacent .adj-time { color: var(--text-muted); }
+
+.now-current-label {
+  font-size: clamp(32px, 11vw, 48px);
+  font-weight: 800;
+  letter-spacing: 0.3px;
+  padding: 4px 16px;
+  border-radius: 16px;
+  margin: 10px 0;
+}
+
+.now-current-time {
+  font-size: 18px;
+  color: var(--text-muted);
+  font-weight: 600;
+}
+
+.now-countdown {
+  margin-top: 18px;
+  font-size: 15px;
+  color: var(--text-faint);
+}
+.now-countdown strong {
+  display: block;
+  font-size: clamp(30px, 10vw, 42px);
+  color: var(--text);
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  margin-top: 2px;
+}
+
+.now-status-simple {
+  padding: 40px 12px;
+  text-align: center;
+}
+.now-status-simple .status-headline {
+  font-size: clamp(22px, 7vw, 30px);
+  font-weight: 800;
+  margin-bottom: 10px;
+}
+.now-status-simple .status-detail {
+  font-size: 17px;
+  color: var(--text-muted);
+}
+
+/* --- Liste de postes (vue Journée / Semaine) ------------------------------ */
+
+.day-header {
+  font-size: 20px;
+  font-weight: 800;
+  margin-bottom: 4px;
+}
+.day-subheader {
+  color: var(--text-muted);
+  margin-bottom: 16px;
+  font-size: 15px;
+}
+
+.shift-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.shift-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  border-radius: 14px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+}
+.shift-row.current {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent) inset;
+}
+
+.shift-dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.shift-time {
+  font-variant-numeric: tabular-nums;
+  color: var(--text-muted);
+  font-size: 14px;
+  width: 92px;
+  flex-shrink: 0;
+}
+
+.shift-label {
+  font-size: 16px;
+  font-weight: 600;
+  flex: 1;
+}
+
+.rest-badge {
+  display: inline-block;
+  margin-top: 4px;
+  padding: 3px 10px;
+  border-radius: 10px;
+  background: var(--border);
+  color: var(--text-muted);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+/* --- Vue Semaine ---------------------------------------------------------- */
+
+.week-day-btn {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 14px 16px;
+  margin-bottom: 8px;
+  border-radius: 14px;
+  border: 1px solid var(--border);
+  background: var(--bg-elevated);
+  color: var(--text);
+  font-size: 16px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.week-day-btn .week-day-hours {
+  font-weight: 500;
+  color: var(--text-muted);
+  font-size: 14px;
+}
+.week-day-btn.active {
+  border-color: var(--accent);
+}
+
+/* --- Vue Horaires lycée ----------------------------------------------------- */
+
+.school-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+.school-table th, .school-table td {
+  text-align: left;
+  padding: 8px 6px;
+  border-bottom: 1px solid var(--border);
+  vertical-align: top;
+}
+.school-table th {
+  color: var(--text-muted);
+  font-weight: 700;
+  font-size: 12px;
+}
+
+/* --- Barre d'onglets ----------------------------------------------------- */
+
+#tab-bar {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 10;
+  display: flex;
+  background: var(--bg-elevated);
+  border-top: 1px solid var(--border);
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+.tab-btn {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 8px 4px 6px;
+  border: none;
+  background: transparent;
+  color: var(--text-faint);
+  cursor: pointer;
+}
+.tab-btn.active { color: var(--accent); }
+.tab-icon { font-size: 20px; }
+.tab-label { font-size: 11px; font-weight: 600; }
+
+/* --- Overlay réglages ------------------------------------------------------ */
+
+#settings-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: flex-end;
+}
+#settings-overlay[hidden] { display: none; }
+
+#settings-panel {
+  width: 100%;
+  max-height: 85vh;
+  overflow-y: auto;
+  background: var(--bg-elevated);
+  border-radius: 20px 20px 0 0;
+  padding: 16px 18px calc(env(safe-area-inset-bottom, 0px) + 18px);
+}
+
+#settings-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+#settings-header h2 { margin: 0; font-size: 19px; }
+#btn-close-settings {
+  min-width: 36px;
+  min-height: 36px;
+  border: none;
+  background: var(--border);
+  color: var(--text);
+  border-radius: 10px;
+  font-size: 16px;
+  cursor: pointer;
+}
+
+#install-hint {
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: var(--border);
+  font-size: 14px;
+  line-height: 1.5;
+  margin-bottom: 14px;
+}
+
+#notif-section, #subscription-section {
+  margin-bottom: 14px;
+}
+#notif-status {
+  font-size: 14px;
+  color: var(--text-muted);
+  margin: 0 0 10px;
+}
+
+button#btn-enable-notifs,
+button#btn-test-push,
+button#btn-copy-subscription {
+  display: block;
+  width: 100%;
+  padding: 13px;
+  margin-bottom: 8px;
+  border: none;
+  border-radius: 12px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 15px;
+  font-weight: 700;
+  cursor: pointer;
+}
+button#btn-test-push { background: var(--border); color: var(--text); }
+button#btn-copy-subscription { background: var(--border); color: var(--text); }
+
+#subscription-json {
+  width: 100%;
+  font-family: ui-monospace, SFMono-Regular, monospace;
+  font-size: 11px;
+  padding: 10px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text);
+  resize: none;
+}
+
+/* Empêche tout défilement horizontal parasite */
+html, body { overflow-x: hidden; }
