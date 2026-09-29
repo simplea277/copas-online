@@ -223,6 +223,37 @@ test('normalizeVapidSubject : replie sur une valeur par défaut si absent', () =
 });
 
 // ---------------------------------------------------------------------------
+// push.js : validation de forme d'un abonnement push — régression du
+// 2026-09-29 (un endpoint sans "https://", tronqué au collage dans
+// PUSH_SUBSCRIPTION sur Render, passait inaperçu jusqu'à l'échec de
+// l'envoi réel, avec un message d'erreur peu explicite côté web-push).
+// ---------------------------------------------------------------------------
+
+test('isValidSubscription : accepte un abonnement bien formé', () => {
+  const push = require('./push');
+  assert.strictEqual(push.isValidSubscription({
+    endpoint: 'https://web.push.apple.com/abc',
+    keys: { p256dh: 'x', auth: 'y' }
+  }), true);
+});
+
+test('isValidSubscription : rejette un endpoint sans "https://" (le piège rencontré)', () => {
+  const push = require('./push');
+  assert.strictEqual(push.isValidSubscription({
+    endpoint: 'web.push.apple.com/abc',
+    keys: { p256dh: 'x', auth: 'y' }
+  }), false);
+});
+
+test('isValidSubscription : rejette un abonnement sans clés, vide, ou non-objet', () => {
+  const push = require('./push');
+  assert.strictEqual(push.isValidSubscription(null), false);
+  assert.strictEqual(push.isValidSubscription({}), false);
+  assert.strictEqual(push.isValidSubscription({ endpoint: 'https://x.com' }), false);
+  assert.strictEqual(push.isValidSubscription({ endpoint: 'https://x.com', keys: { p256dh: 'x' } }), false);
+});
+
+// ---------------------------------------------------------------------------
 // push.js : la boucle ne doit jamais planter, même sans configuration/
 // abonnement (cas par défaut en environnement de test, sans clés VAPID).
 // ---------------------------------------------------------------------------

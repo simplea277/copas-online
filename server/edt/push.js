@@ -62,12 +62,34 @@ if (VAPID_PUBLIC_KEY && VAPID_PRIVATE_KEY) {
   console.warn('[edt/push] VAPID_PUBLIC_KEY/VAPID_PRIVATE_KEY absentes de l\'environnement : notifications push désactivées.');
 }
 
+// Validation de forme d'un abonnement push. Piège rencontré en pratique le
+// 2026-09-29 : un endpoint collé sur Render sans son préfixe "https://"
+// (probablement tronqué en chemin lors d'un copier/coller) faisait échouer
+// l'envoi bien plus tard, au moment de l'appel à web-push, avec une erreur
+// peu explicite ("VAPID audience is not a url. null//null") — on valide
+// donc la forme dès la lecture (démarrage ET /edt/api/subscribe) pour
+// détecter ce genre de corruption immédiatement plutôt qu'à l'usage.
+function isValidSubscription(sub) {
+  return !!sub && typeof sub === 'object' &&
+    typeof sub.endpoint === 'string' && /^https:\/\//.test(sub.endpoint) &&
+    !!sub.keys && typeof sub.keys.p256dh === 'string' && typeof sub.keys.auth === 'string';
+}
+
 let subscription = null;
 
 if (process.env.PUSH_SUBSCRIPTION) {
   try {
-    subscription = JSON.parse(process.env.PUSH_SUBSCRIPTION);
-    console.log('[edt/push] Abonnement chargé depuis la variable d\'environnement PUSH_SUBSCRIPTION.');
+    const parsed = JSON.parse(process.env.PUSH_SUBSCRIPTION);
+    if (isValidSubscription(parsed)) {
+      subscription = parsed;
+      console.log('[edt/push] Abonnement chargé depuis la variable d\'environnement PUSH_SUBSCRIPTION.');
+    } else {
+      console.error(
+        '[edt/push] PUSH_SUBSCRIPTION présente mais de forme invalide (endpoint absent/pas en https, ' +
+        'ou clés p256dh/auth manquantes) — ignorée. Vérifie qu\'elle commence bien par ' +
+        '"{\\"endpoint\\":\\"https://..." (piège déjà rencontré : "https://" tronqué au collage).'
+      );
+    }
   } catch (e) {
     console.warn('[edt/push] PUSH_SUBSCRIPTION invalide (JSON non parsable) : ' + e.message);
   }
@@ -192,6 +214,7 @@ function stop() {
 
 module.exports = {
   VAPID_PUBLIC_KEY,
+  isValidSubscription,
   setSubscription,
   getSubscription,
   isConfigured,

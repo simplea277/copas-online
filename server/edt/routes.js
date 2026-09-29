@@ -25,10 +25,11 @@ router.get('/edt/api/vapid-public-key', (req, res) => {
 });
 
 router.post('/edt/api/subscribe', (req, res) => {
-  const body = req.body;
-  const sub = body && body.subscription;
-  if (!sub || typeof sub !== 'object' || typeof sub.endpoint !== 'string' || !sub.endpoint) {
-    return res.status(400).json({ error: 'Abonnement invalide.' });
+  const sub = req.body && req.body.subscription;
+  if (!push.isValidSubscription(sub)) {
+    return res.status(400).json({
+      error: 'Abonnement invalide (endpoint absent/pas en https, ou clés manquantes).'
+    });
   }
   push.setSubscription(sub);
   res.json({ ok: true });
