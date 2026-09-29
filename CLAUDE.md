@@ -1203,28 +1203,16 @@ données d'autrui) : c'est juste resté cohérent avec le pattern déjà en plac
     standalone` false) et le JSON d'abonnement à copier quelque part dans
     l'interface.
 
-## État : implémenté et déployé (2026-09-29), pas encore testé en conditions réelles
+## État : implémenté, déployé et confirmé fonctionnel en conditions réelles (2026-09-29)
 
 Codé, testé automatiquement (`server/edt/schedule.test.js`, ajouté à
 `npm test` — logique horaire : poste actuel/précédent/suivant, heure de
 Paris hiver/été, jours de repos, jours off, contiguïté de la grille,
-calcul des évènements de notification) et vérifié par requêtes HTTP
-directes (toutes les routes `/ping`, `/edt/*`, `/edt/api/*` répondent comme
-attendu, en local et en prod après déploiement) — mais **jamais encore
-ouvert par l'utilisateur sur un vrai iPhone**. À valider en priorité au
-prochain retour :
-
-- Installation sur l'écran d'accueil (le message d'aide s'affiche-t-il
-  bien tant que ce n'est pas fait ? l'icône/le nom sont-ils corrects une
-  fois ajoutée ?).
-- Activation des notifications (permission iOS, abonnement créé, JSON
-  affiché avec bouton "Copier" fonctionnel).
-- Après avoir collé l'abonnement dans `PUSH_SUBSCRIPTION` sur Render (+
-  déclenché un déploiement manuel, voir piège déjà noté dans la section
-  Nutrition ci-dessus — s'applique identiquement ici) : notification test
-  reçue, puis notifications réelles autour d'un changement de poste.
-- Lisibilité/mise en page réelle sur iPhone (safe-area, tailles de police,
-  mode sombre).
+calcul des évènements de notification, normalisation de `VAPID_SUBJECT`
+voir bug ci-dessous) et vérifié par requêtes HTTP directes en local et en
+prod. **Installation sur l'écran d'accueil, activation des notifications
+et réception confirmées par l'utilisateur sur son iPhone** le jour même,
+après correction du bug VAPID ci-dessous.
 
 **Icônes PWA actuelles : simples placeholders générés par script** (cercle
 doré sur fond bleu nuit avec un repère façon aiguilles d'horloge, généré
@@ -1232,19 +1220,32 @@ par un script Node temporaire supprimé après usage — voir historique de
 commit si besoin de le reproduire), pas une vraie icône designée. À
 remplacer si l'utilisateur veut quelque chose de plus soigné.
 
+## Bug corrigé (et pourquoi, pour éviter de le réintroduire)
+
+**Configuration VAPID silencieusement invalide malgré des clés
+correctes.** Juste après le premier déploiement, l'utilisateur obtenait
+"clé VAPID absente côté serveur" en appuyant sur "Activer les
+notifications", alors que `VAPID_PUBLIC_KEY`/`VAPID_PRIVATE_KEY` étaient
+bien présentes sur Render. Cause : `VAPID_SUBJECT` ne contenait que
+l'adresse e-mail (`tardiswho08@gmail.com`), sans le préfixe `mailto:`
+qu'exige `webpush.setVapidDetails` (sinon : exception `Vapid subject is
+not a valid URL`) — exception attrapée par le `try/catch` de `push.js`,
+qui laissait `configured` à `false` sans rien casser d'autre.
+`/edt/api/vapid-public-key` renvoyait donc bien une clé publique (lue
+indépendamment de `configured`) mais avec `configured: false`, d'où la
+confusion. Le service worker (`sw.js`) n'a aucun handler `fetch` — la
+mise en cache a été écartée comme cause possible dès le diagnostic.
+Corrigé dans `server/edt/push.js` par une normalisation défensive
+(`normalizeVapidSubject` : ajoute `mailto:` automatiquement si le sujet
+ne commence par `mailto:`/`http://`/`https://`) plutôt que de compter
+uniquement sur une valeur bien formée côté Render — donc robuste même si
+la variable est recollée sans le préfixe à l'avenir. Un log de démarrage
+a été ajouté à cette occasion (présence de chaque variable VAPID/
+`PUSH_SUBSCRIPTION`, jamais leur valeur) pour diagnostiquer ce genre de
+problème plus vite la prochaine fois.
+
 ## Ce qu'il reste à faire
 
-- **Test en conditions réelles sur iPhone** (voir ci-dessus) — priorité
-  numéro 1 au prochain retour de l'utilisateur.
-- **Variables d'environnement à ajouter sur Render**, transmises à
-  l'utilisateur à la fin de ce chantier : `VAPID_PUBLIC_KEY`,
-  `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT` (clés VAPID, générées une seule fois
-  — les réutiliser telles quelles, ne pas en regénérer d'autres sans
-  raison, ça invaliderait tout abonnement déjà créé) ; `PUSH_SUBSCRIPTION`
-  à ajouter/mettre à jour après la première activation des notifications
-  depuis l'app. Ne pas oublier de déclencher un déploiement manuel après
-  tout ajout/changement de variable (l'API Render n'en déclenche pas
-  automatiquement, piège déjà noté dans la section Nutrition).
 - **Configurer cron-job.org (ou équivalent) sur `/ping`** pour garder le
   serveur éveillé — pas fait par Claude (nécessite un compte externe côté
   utilisateur), seule la route serveur est prête.
