@@ -1,4 +1,32 @@
-# Copas Online
+# Reprise rapide (lire en premier)
+
+Le dépôt contient **quatre parties indépendantes**, servies par le même process
+Node (`server.js`) et déployées ensemble sur Render (plan gratuit,
+auto-deploy depuis `main`, service `srv-d93orn57vvec73deij20`,
+`https://copas-online.onrender.com`) :
+
+| Partie | URL | Code | Règle |
+|---|---|---|---|
+| Jeu de cartes Copas Online | `/` | `server.js`, `game/`, `public/client.js`, `public/style.css` | **NE PAS MODIFIER** sans demande explicite de l'utilisateur |
+| Emploi du temps AED (PWA iPhone + notifications push) | `/edt/` | `public/edt/`, `server/edt/` | voir section "EDT" plus bas |
+| Maintien en éveil | `/ping`, `/ping/status` | `server/edt/keepalive.js` | voir section "EDT" → "Maintien en éveil" |
+| Tableau nutrition (caché) | `/nutrition` | `nutrition.js`, `nutrition-page/` | voir section "Nutrition" |
+
+- L'utilisateur n'est pas développeur : expliquer simplement, en français.
+- Tests : `npm test` (un test du moteur du jeu est connu comme instable,
+  relancer s'il est le seul à échouer — voir "Comment tester").
+- Le plan gratuit Render **endort le serveur après 15 min sans requête
+  entrante**. Serveur endormi = plus aucune notification EDT. D'où `/ping`
+  (appelé par cron-job.org) + l'auto-ping (voir la section EDT).
+- Variables d'environnement Render utilisées : `VAPID_PUBLIC_KEY`,
+  `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT`, `PUSH_SUBSCRIPTION`, `SUPABASE_URL`,
+  `SUPABASE_SERVICE_ROLE_KEY` ; `RENDER_EXTERNAL_URL` est fournie
+  automatiquement par Render (utilisée par l'auto-ping). Modifier une
+  variable sur Render ne redéploie PAS tout seul : relancer un déploiement.
+
+---
+
+# Copas Online (jeu de cartes)
 
 ## Qu'est-ce que ce projet
 
@@ -1182,10 +1210,41 @@ données d'autrui) : c'est juste resté cohérent avec le pattern déjà en plac
   - **Abonnement expiré (404/410)** : logué clairement côté serveur et
     l'abonnement en mémoire est effacé (`subscription = null`), plutôt que
     de continuer à tenter d'envoyer dans le vide.
-- **Route `GET /ping`** (à la racine, `server.js`, sans rapport avec le jeu
-  ni l'EDT) : répond `"ok"` (200), destinée à un service externe type
-  cron-job.org pour garder le serveur Render éveillé (le plan gratuit
-  s'endort après inactivité).
+- **Maintien en éveil : `GET /ping`, `GET /ping/status` et auto-ping**
+  (`server/edt/keepalive.js`, monté depuis `server.js` via
+  `app.use(keepalive.router)` + `keepalive.start()`, sans rapport avec le
+  jeu) :
+  - `GET /ping` répond `"ok"` (200), comme depuis le début : c'est ce
+    qu'appelle cron-job.org toutes les 10 min. Chaque appel est noté en
+    mémoire (date + source déduite du User-Agent : `cron-job.org`, `auto`
+    ou `autre` — jamais le User-Agent complet) et logué (`[ping] reçu
+    (cron-job.org)`, visible dans les logs Render).
+  - `GET /ping/status` (JSON) : heure de démarrage du serveur, dernier
+    appel de cron-job.org, résultat du dernier auto-ping, 20 derniers
+    pings. Affiché de façon lisible dans les Réglages ⚙ de `/edt/`
+    (section "État du serveur", ligne en rouge si cron-job.org n'a pas
+    appelé depuis plus de 20 min ou si l'auto-ping échoue). Un "Serveur
+    allumé à l'instant / depuis 3 min" alors qu'on ne l'a pas redéployé =
+    il s'était endormi.
+  - **Auto-ping** : toutes les 10 min (`KEEPALIVE_INTERVAL_MS` pour changer),
+    le serveur appelle sa propre adresse publique `RENDER_EXTERNAL_URL/ping`
+    (variable fournie automatiquement par Render ; `KEEPALIVE_URL` la
+    remplace si définie). La requête ressort sur Internet et repasse par
+    l'entrée de Render, donc compte comme trafic entrant : tant que le
+    process tourne, il ne s'endort plus, même si cron-job.org tombe en
+    panne. **Limite** : un serveur déjà endormi ne peut pas se réveiller
+    tout seul — cron-job.org reste nécessaire comme filet de sécurité pour
+    le réveiller (après une panne Render, par exemple). En local (aucune de
+    ces deux variables), l'auto-ping est simplement désactivé.
+  - Testé par `server/edt/keepalive.test.js` (dans `npm test`) + serveur
+    réel lancé en local avec `KEEPALIVE_URL=http://127.0.0.1:PORT`.
+  - **Quota Render à garder en tête** : 750 heures d'instance gratuites par
+    mois et par compte Render (workspace), tous services gratuits
+    confondus. Un service éveillé 24h/24 consomme 720-744 h/mois : ça passe
+    pour UN service, mais un deuxième service gratuit éveillé sur le même
+    compte épuise le quota et Render suspend alors TOUS les services
+    gratuits jusqu'au 1er du mois suivant (à vérifier dans le dashboard
+    Render → Billing si le site devient complètement injoignable).
 - **Interface mobile uniquement** (`public/edt/edt.css`/`edt.js`) : en-tête
   fixe (jour + horaires de la journée), vue "Maintenant" au centre
   (poste précédent grisé / poste actuel en très grand avec compte à rebours
@@ -1276,14 +1335,44 @@ la notification test envoyée juste après ce redémarrage a bien été reçue,
 confirmant que le repli sur `PUSH_SUBSCRIPTION` fonctionne de bout en bout
 après une coupure.
 
+**Notifications arrêtées : cron-job.org ne gardait plus le site éveillé
+(2026-11-25).** Signalé par l'utilisateur : "le truc qui ping le site
+toutes les 10 minutes ne fonctionne plus, donc site pas réveillé = pas de
+notification". Diagnostic :
+- Le code de `/ping` n'avait **pas changé** depuis sa création (commit
+  `ee82ef3`, 2026-09-29) et répondait correctement en local ; aucun commit
+  après le 2026-09-29. La panne venait donc de l'extérieur (cron-job.org
+  ou Render), pas du code. Le site en prod n'était pas joignable depuis
+  l'environnement de la session Claude (réseau restreint), donc la cause
+  exacte côté cron-job.org n'a pas pu être lue directement.
+- Causes possibles côté cron-job.org : la tâche se **désactive toute
+  seule après une série d'échecs consécutifs** (d'après des sources tierces,
+  ~15-25 échecs ; un échec = réponse hors 2xx, ou plus de 30 s sans
+  réponse — délai max de cron-job.org). Or un réveil de Render prend ~1
+  min, plus que ces 30 s : chaque redéploiement/panne Render où le site
+  était endormi comptait comme un échec. Autres pistes : adresse saisie en
+  `http://` (redirection 3xx vers https, peut compter comme échec selon le
+  réglage), compte cron-job.org désactivé.
+- Cause possible côté Render : quota de 750 h/mois épuisé (voir plus haut)
+  si un autre service gratuit tourne sur le même compte.
+- Vrai défaut de conception, lui corrigé dans le code : tout reposait sur
+  UN service externe, sans aucun moyen de voir s'il fonctionnait.
+  Correctif : auto-ping + `/ping/status` + section "État du serveur" dans
+  les Réglages (voir "Maintien en éveil" plus haut). Demandé à
+  l'utilisateur en parallèle : vérifier/réactiver la tâche sur
+  cron-job.org (historique des exécutions, message d'erreur).
+
 ## Ce qu'il reste à faire
 
-- Rien de bloquant. `cron-job.org` configuré par l'utilisateur sur `/ping`
-  (intervalle 5-10 min, sous le seuil de mise en veille de 15 min de
-  Render), boucle de notifications vérifiée fonctionnelle après un
-  redémarrage réel du serveur (voir bug ci-dessus).
-- **`OFF_PERIODS` à remplir par l'utilisateur** au fil du temps (vacances,
-  jours fériés) — vide pour l'instant, voir format documenté dans
-  `server/edt/schedule.js`.
+- `cron-job.org` configuré par l'utilisateur sur `/ping` (intervalle 10
+  min, sous le seuil de mise en veille de 15 min de Render). Depuis
+  2026-11 il n'est plus le seul à garder le serveur éveillé (auto-ping,
+  voir plus haut) mais reste nécessaire pour le RÉVEILLER s'il s'endort.
+- **À confirmer après le déploiement du correctif du 2026-11-25** (voir
+  bug ci-dessous) : dans `/edt/` → ⚙ → "État du serveur", vérifier que
+  l'auto-ping est "OK" et que "Serveur allumé depuis..." grandit au fil des
+  heures sans revenir à zéro (sinon : le serveur s'endort encore).
+- `OFF_PERIODS` remplies pour l'année scolaire 2026-2027 (voir
+  `server/edt/schedule.js`), à compléter pour les années suivantes.
 - Icônes PWA à remplacer par quelque chose de plus soigné si envie (voir
   ci-dessus).
