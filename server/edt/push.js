@@ -140,8 +140,8 @@ async function sendTestPush() {
 //
 // Toutes les CHECK_EVERY_MS (5s), on regarde en heure de Paris si aujourd'hui
 // est un jour travaillé, et pour chaque début de poste (y compris le premier
-// de la journée) + la fin de service, on envoie une notif 3 minutes avant et
-// une autre 30 secondes avant. TOLERANCE_MS rattrape un tick manqué (réveil
+// de la journée) + la fin de service, on envoie UNE notif 2 minutes avant
+// (jusqu'au 2026-11-25 : deux notifs, 3 min et 30 s avant). TOLERANCE_MS rattrape un tick manqué (réveil
 // du serveur, redémarrage) si on est encore dans la minute qui suit l'instant
 // visé ; au-delà, on considère l'occasion ratée et on ne l'envoie pas en
 // retard. sentKeys mémorise ce qui a déjà été envoyé (clé = date + évènement
@@ -151,8 +151,7 @@ const sentKeys = new Set();
 const TOLERANCE_MS = 60 * 1000;
 const CHECK_EVERY_MS = 5000;
 const NOTIFICATION_OFFSETS = [
-  { kind: 'minus3', ms: 3 * 60 * 1000 },
-  { kind: 'minus30s', ms: 30 * 1000 }
+  { kind: 'minus2', ms: 2 * 60 * 1000 }
 ];
 
 let loopHandle = null;
@@ -188,7 +187,7 @@ async function tick(now) {
       const delta = now.getTime() - targetInstant.getTime();
       if (delta >= 0 && delta <= TOLERANCE_MS) {
         sentKeys.add(key);
-        const body = core.messageForEvent(event, offset.kind);
+        const body = core.messageForEvent(event);
         sendPush({ title: 'Mon EDT', body: body, tag: key }).catch((e) => {
           console.error('[edt/push] Erreur d\'envoi planifié :', e && e.message);
         });
@@ -224,6 +223,7 @@ module.exports = {
   stop,
   // Exposé uniquement pour les tests unitaires (server/edt/schedule.test.js).
   _tick: tick,
+  _NOTIFICATION_OFFSETS: NOTIFICATION_OFFSETS,
   _sentKeys: sentKeys,
   _normalizeVapidSubject: normalizeVapidSubject
 };

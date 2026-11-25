@@ -280,16 +280,14 @@
     return events;
   }
 
-  // offsetKind: 'minus3' | 'minus30s'
-  function messageForEvent(event, offsetKind) {
+  // Une seule notification par évènement, 2 minutes avant (demandé le
+  // 2026-11-25, remplace les deux anciennes notifs à 3 min et 30 s).
+  function messageForEvent(event) {
     if (event.type === 'end-of-service') {
-      return offsetKind === 'minus3' ? 'Fin de service dans 3 min' : 'Fin de service dans 30 s';
+      return 'Fin de service dans 2 min';
     }
     var label = (event.label || '').toUpperCase();
-    if (offsetKind === 'minus3') {
-      return 'Dans 3 min : ' + label + ' (' + formatHM(event.time) + ' – ' + formatHM(event.shiftEnd) + ')';
-    }
-    return 'Dans 30 s : ' + label;
+    return 'Dans 2 min : ' + label + ' (' + formatHM(event.time) + ' – ' + formatHM(event.shiftEnd) + ')';
   }
 
   return {
