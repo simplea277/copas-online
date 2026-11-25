@@ -1345,7 +1345,18 @@ notification". Diagnostic :
   ou Render), pas du code. Le site en prod n'était pas joignable depuis
   l'environnement de la session Claude (réseau restreint), donc la cause
   exacte côté cron-job.org n'a pas pu être lue directement.
-- Causes possibles côté cron-job.org : la tâche se **désactive toute
+- **Cause confirmée par l'utilisateur (mail de cron-job.org)** : "your
+  cronjob has been disabled automatically because of too many failed
+  executions" — dernière tentative le 2026-10-01 à 09:10 GMT, statut
+  `503 Service Unavailable`, **26 échecs consécutifs** (≈ 4h20 d'affilée à
+  raison d'un appel toutes les 10 min). Le site renvoyait donc 503 pendant
+  plusieurs heures ce matin-là (incident/redémarrage côté Render — aucun
+  commit ni déploiement ce jour-là, cause exacte côté Render non vérifiée,
+  pas d'accès aux logs) ; cron-job.org a désactivé la tâche et ne l'a
+  JAMAIS réactivée d'elle-même : le site s'endormait donc depuis le
+  2026-10-01. Remède : réactiver la tâche dans le compte cron-job.org (à
+  refaire à chaque nouveau mail de ce type).
+- Mécanisme (pour mémoire) : la tâche se **désactive toute
   seule après une série d'échecs consécutifs** (d'après des sources tierces,
   ~15-25 échecs ; un échec = réponse hors 2xx, ou plus de 30 s sans
   réponse — délai max de cron-job.org). Or un réveil de Render prend ~1
