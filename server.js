@@ -16,6 +16,7 @@ const botAIExpert = require('./game/botAI_expert');
 const nutritionRouter = require('./nutrition');
 const edtRoutes = require('./server/edt/routes');
 const edtPush = require('./server/edt/push');
+const keepalive = require('./server/edt/keepalive');
 
 const app = express();
 const server = http.createServer(app);
@@ -40,12 +41,12 @@ app.get('/nutrition', (req, res) => {
 app.use('/nutrition', express.static(path.join(__dirname, 'nutrition-page')));
 app.use(nutritionRouter);
 
-// Route racine utilisée par un service externe (cron-job.org) pour garder le
-// serveur Render (plan gratuit) éveillé — sans rapport avec le jeu ni la
-// section EDT ci-dessous.
-app.get('/ping', (req, res) => {
-  res.status(200).send('ok');
-});
+// Maintien en éveil (plan gratuit Render) — sans rapport avec le jeu.
+// GET /ping (appelé par cron-job.org, répond "ok"), GET /ping/status
+// (diagnostic) + auto-ping du serveur vers sa propre adresse publique.
+// Voir server/edt/keepalive.js et CLAUDE.md.
+app.use(keepalive.router);
+keepalive.start();
 
 // Section "EDT" — emploi du temps de poste + notifications push,
 // indépendante du jeu Copas. Voir server/edt/ et CLAUDE.md.

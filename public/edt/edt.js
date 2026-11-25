@@ -505,6 +505,62 @@
     }
   }
 
+  // --- État du serveur (diagnostic du maintien en éveil, voir
+  // server/edt/keepalive.js) ------------------------------------------------------
+
+  function formatAgo(isoString, nowMs) {
+    if (!isoString) return null;
+    var minutes = Math.floor((nowMs - new Date(isoString).getTime()) / 60000);
+    if (minutes < 1) return "à l'instant";
+    if (minutes < 60) return 'il y a ' + minutes + ' min';
+    var hours = Math.floor(minutes / 60);
+    if (hours < 24) return 'il y a ' + hours + ' h ' + pad2(minutes % 60);
+    return 'il y a ' + Math.floor(hours / 24) + ' j';
+  }
+
+  function pad2(n) { return n < 10 ? '0' + n : String(n); }
+
+  function serverStatusRow(label, value, warn) {
+    var row = el('div', 'server-status-row' + (warn ? ' warn' : ''));
+    row.appendChild(text('span', 'label', label));
+    row.appendChild(text('span', 'value', value));
+    return row;
+  }
+
+  function renderServerStatus() {
+    var list = $('server-status-list');
+    if (!list) return;
+    list.textContent = 'Chargement…';
+    fetch('/ping/status', { cache: 'no-store' })
+      .then(function (res) { return res.json(); })
+      .then(function (s) {
+        var nowMs = Date.now();
+        clear(list);
+        list.appendChild(serverStatusRow('Serveur allumé', formatAgo(s.serverStartedAt, nowMs).replace('il y a', 'depuis')));
+
+        // cron-job.org appelle toutes les 10 min : au-delà de 20 min sans
+        // appel (et serveur allumé depuis plus longtemps que ça), c'est
+        // probablement que le service externe ne fonctionne plus.
+        var cronAgo = formatAgo(s.lastCronJobPingAt, nowMs);
+        var cronStale = s.uptimeSeconds > 20 * 60 &&
+          (!s.lastCronJobPingAt || nowMs - new Date(s.lastCronJobPingAt).getTime() > 20 * 60000);
+        list.appendChild(serverStatusRow('Dernier appel cron-job.org', cronAgo || 'aucun depuis l\'allumage', cronStale));
+
+        if (!s.selfPingEnabled) {
+          list.appendChild(serverStatusRow('Auto-ping', 'désactivé', true));
+        } else if (!s.lastSelfPing) {
+          list.appendChild(serverStatusRow('Auto-ping', 'en attente', false));
+        } else {
+          var selfAgo = formatAgo(s.lastSelfPing.at, nowMs);
+          list.appendChild(serverStatusRow('Auto-ping', s.lastSelfPing.ok ? 'OK, ' + selfAgo : 'ÉCHEC, ' + selfAgo, !s.lastSelfPing.ok));
+        }
+      })
+      .catch(function () {
+        clear(list);
+        list.appendChild(serverStatusRow('Serveur', 'injoignable', true));
+      });
+  }
+
   function setupSettings() {
     var overlay = $('settings-overlay');
     $('btn-settings').addEventListener('click', function () {
@@ -512,6 +568,7 @@
       $('install-hint').hidden = isStandalone();
       updateNotifStatus(describeNotifPermission());
       renderOffPeriodsList();
+      renderServerStatus();
     });
     $('btn-close-settings').addEventListener('click', function () { overlay.hidden = true; });
     overlay.addEventListener('click', function (e) {
