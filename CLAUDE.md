@@ -1129,8 +1129,12 @@ Node et le même déploiement Render. Une PWA (Progressive Web App) installable
 sur l'écran d'accueil de l'iPhone de l'utilisateur, qui affiche son emploi du
 temps de poste AED (agent·e éducatif·ve, mardi à vendredi) en temps réel
 (poste précédent/actuel/suivant, compte à rebours) et envoie des
-notifications push 3 minutes puis 30 secondes avant chaque changement de
-poste (y compris la fin de service).
+**une** notification push 2 minutes avant chaque changement de poste (y
+compris la fin de service). Jusqu'au 2026-11-25 il y en avait deux (3 min
+puis 30 s avant), remplacées sur demande de l'utilisateur par une seule à
+2 min (`NOTIFICATION_OFFSETS` dans `push.js`, texte dans
+`messageForEvent` de `schedule-core.js` : "Dans 2 min : CIRCULATION
+(10h10 – 11h10)" / "Fin de service dans 2 min").
 
 **Accès caché, comme `/nutrition`.** La page vit à `/edt/` — aucun lien
 depuis le reste du site. Contrairement à `/nutrition`, il n'y a pas
@@ -1201,7 +1205,7 @@ données d'autrui) : c'est juste resté cohérent avec le pattern déjà en plac
     à chaque tick, si aujourd'hui est un jour travaillé (et hors période
     off), calcule les évènements de la journée (chaque début de poste + la
     fin de service) via `core.getNotificationEvents`, et pour chacun,
-    vérifie si l'instant "3 min avant" ou "30 s avant" tombe dans les 60
+    vérifie si l'instant "2 min avant" tombe dans les 60
     dernières secondes (`TOLERANCE_MS`, rattrape un tick manqué après un
     réveil/redémarrage sans jamais envoyer une notif très en retard).
     `sentKeys` (Set en mémoire, clé = date+évènement+décalage) empêche tout

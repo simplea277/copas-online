@@ -228,14 +228,17 @@ test('getNotificationEvents : un évènement par début de poste + un pour la fi
   assert.strictEqual(last.time, shifts[shifts.length - 1].end);
 });
 
-test('messageForEvent : formats attendus (3 min / 30 s / fin de service)', () => {
+test('messageForEvent : formats attendus (2 min avant / fin de service)', () => {
   const event = { type: 'shift-start', time: '10:10', label: 'Circulation', shiftEnd: '11:10' };
-  assert.strictEqual(core.messageForEvent(event, 'minus3'), 'Dans 3 min : CIRCULATION (10h10 – 11h10)');
-  assert.strictEqual(core.messageForEvent(event, 'minus30s'), 'Dans 30 s : CIRCULATION');
+  assert.strictEqual(core.messageForEvent(event), 'Dans 2 min : CIRCULATION (10h10 – 11h10)');
 
   const endEvent = { type: 'end-of-service', time: '17:45' };
-  assert.strictEqual(core.messageForEvent(endEvent, 'minus3'), 'Fin de service dans 3 min');
-  assert.strictEqual(core.messageForEvent(endEvent, 'minus30s'), 'Fin de service dans 30 s');
+  assert.strictEqual(core.messageForEvent(endEvent), 'Fin de service dans 2 min');
+});
+
+test('une seule notification par changement de poste, 2 minutes avant', () => {
+  const push = require('./push');
+  assert.deepStrictEqual(push._NOTIFICATION_OFFSETS, [{ kind: 'minus2', ms: 2 * 60 * 1000 }]);
 });
 
 test('formatHM : pas de zéro initial sur l\'heure', () => {
